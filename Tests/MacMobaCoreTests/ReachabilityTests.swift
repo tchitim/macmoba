@@ -74,6 +74,35 @@ final class ReachabilityTests: XCTestCase {
         XCTAssertNil(rdp.reachabilityTarget, "empty host is not checkable")
     }
 
+    // MARK: - what may be polled
+
+    /// The bug this prevents: a host behind a bastion is addressed on the
+    /// bastion's network, so polling it from here always fails — painting a red
+    /// "down" light on a machine that connects perfectly.
+    func testJumpHostSessionIsNotDirectlyProbeable() {
+        var s = SessionConfig(name: "vm", host: "192.0.2.5", port: 22, username: "root")
+        s.kind = SessionKind.ssh.rawValue
+        XCTAssertTrue(s.isDirectlyProbeable, "no jump host — fine to poll")
+
+        s.proxyJump = "bastion-id"
+        XCTAssertFalse(s.isDirectlyProbeable, "behind a jump host — must not be polled")
+        XCTAssertNotNil(s.reachabilityTarget, "it still has an address; it is just not ours to dial")
+    }
+
+    func testBlankJumpHostStillCountsAsDirect() {
+        var s = SessionConfig(name: "vm", host: "192.0.2.5", port: 22, username: "root")
+        for blank in ["", "   "] {
+            s.proxyJump = blank
+            XCTAssertTrue(s.isDirectlyProbeable, "proxyJump=\"\(blank)\" means no jump host")
+        }
+    }
+
+    func testUnprobeableKindsAreNotDirectlyProbeable() {
+        var serial = SessionConfig(name: "s", host: "/dev/cu.usb", username: "")
+        serial.kind = SessionKind.serial.rawValue
+        XCTAssertFalse(serial.isDirectlyProbeable)
+    }
+
     // MARK: - helpers
 
     /// A listening TCP socket on 127.0.0.1 with a kernel-chosen port.

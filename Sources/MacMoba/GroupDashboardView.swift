@@ -20,7 +20,7 @@ struct GroupDashboardView: View {
 
     private var healthCounts: (up: Int, down: Int, unknown: Int) {
         var up = 0, down = 0, unknown = 0
-        for s in members where s.reachabilityTarget != nil {
+        for s in members where s.isDirectlyProbeable {
             switch health.status[s.id] {
             case .up: up += 1
             case .down: down += 1
@@ -115,7 +115,15 @@ struct GroupDashboardView: View {
                     .truncationMode(.middle)
             }
             Spacer()
-            if health.isEnabled, session.reachabilityTarget != nil {
+            if health.isEnabled, !session.isDirectlyProbeable,
+               session.reachabilityTarget != nil {
+                // Reachable only through a bastion: polling it from here would
+                // be a red light on a healthy host.
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help("Reached through a jump host — not polled from this Mac")
+            } else if health.isEnabled, session.reachabilityTarget != nil {
                 let color: Color = {
                     switch health.status[session.id] {
                     case .up: return .green

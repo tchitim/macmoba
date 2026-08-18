@@ -116,4 +116,15 @@ public extension SessionConfig {
             return (host, port)
         }
     }
+
+    /// Whether this session's address means anything from THIS Mac.
+    ///
+    /// A session behind a jump host is addressed on the bastion's network, so
+    /// dialling it from here fails even while the session connects perfectly.
+    /// Polling it would paint a red light on a healthy machine — worse than no
+    /// light, because a wrong red is indistinguishable from a real outage.
+    var isDirectlyProbeable: Bool {
+        guard reachabilityTarget != nil else { return false }
+        return (proxyJump ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
 }

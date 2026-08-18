@@ -48,7 +48,9 @@ final class HealthMonitor: ObservableObject {
     func sweep() {
         guard isEnabled, !sweeping else { return }
         let targets: [(id: String, host: String, port: Int)] = sessionsProvider().compactMap {
-            guard let t = $0.reachabilityTarget else { return nil }
+            // Jump-host sessions are deliberately not polled — see
+            // isDirectlyProbeable. They show as unchecked, not as down.
+            guard $0.isDirectlyProbeable, let t = $0.reachabilityTarget else { return nil }
             return ($0.id, t.host, t.port)
         }
         guard !targets.isEmpty else { return }

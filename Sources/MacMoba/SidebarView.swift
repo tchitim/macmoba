@@ -552,7 +552,13 @@ struct SessionRow: View {
     /// Reachability light: green up, red down, grey unknown/not-yet-checked.
     /// Absent entirely when monitoring is off, so the row is unchanged then.
     @ViewBuilder private var healthDot: some View {
-        if health.isEnabled, session.reachabilityTarget != nil {
+        if health.isEnabled, session.reachabilityTarget != nil,
+           !session.isDirectlyProbeable {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 8))
+                .foregroundStyle(.tertiary)
+                .help("Reached through a jump host — not polled from this Mac")
+        } else if health.isEnabled, session.reachabilityTarget != nil {
             let color: Color = {
                 switch health.status[session.id] {
                 case .up: return .green

@@ -240,14 +240,44 @@ struct SessionInspectorView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
     }
 
+    /// Manual check. A direct host gets a plain TCP probe; one behind a jump
+    /// host is opened THROUGH the chain, because its address only means
+    /// something on the bastion's network. That costs an SSH login, which is
+    /// why the background sweep skips these and only this button does it.
     private func checkHealth(_ s: SessionConfig) {
         guard let target = s.reachabilityTarget else { return }
         checkingHealth = true
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = ReachabilityProbe.check(host: target.host, port: target.port, timeout: 2)
-            DispatchQueue.main.async {
-                health = result
-                checkingHealth = false
+        if s.isDirectlyProbeable {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = ReachabilityProbe.check(host: target.host, port: target.port, timeout: 2)
+                DispatchQueue.main.async {
+                    health = result
+                    checkingHealth = false
+                }
+            }
+            return
+        }
+        Task {
+            let started = Date()
+            do {
+                let chain = try await SecretResolver.resolve(sessions: app.jumpChain(for: s))
+                let resolved = try await SecretResolver.resolve(session: s)
+                // Opening the forward IS the proof: the bastion accepted us and
+                // the target accepted the channel.
+                let route = try await RemoteDesktopRoute.open(
+                    target: resolved, via: chain.last, viaHops: chain.dropLast().map { $0 },
+                    hostKeys: app.hostKeyVerification)
+                route.close()
+                let ms = Int(Date().timeIntervalSince(started) * 1000)
+                await MainActor.run {
+                    health = .up(latencyMs: ms)
+                    checkingHealth = false
+                }
+            } catch {
+                await MainActor.run {
+                    health = .down(reason: "via jump host: \(error.localizedDescription)")
+                    checkingHealth = false
+                }
             }
         }
     }
