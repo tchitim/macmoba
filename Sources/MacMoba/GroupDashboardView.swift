@@ -44,6 +44,17 @@ struct GroupDashboardView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                // Without this, clicking a folder leaves you in the dashboard
+                // with no way back to the empty inspector.
+                Button {
+                    window.selectedGroup = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Close")
+                .accessibilityLabel("Close folder dashboard")
             }
             if health.isEnabled {
                 let counts = healthCounts
@@ -94,6 +105,19 @@ struct GroupDashboardView: View {
                 }
             }
             Divider()
+            if health.isEnabled, members.contains(where: { !$0.isDirectlyProbeable
+                                                    && $0.reachabilityTarget != nil }) {
+                Button {
+                    health.checkViaJump(members)
+                } label: {
+                    Label(health.checkingViaJump ? "Checking…" : "Check via Jump Host",
+                          systemImage: "arrow.triangle.branch")
+                        .frame(maxWidth: .infinity)
+                }
+                .controlSize(.small)
+                .disabled(health.checkingViaJump)
+                .help("Opens the bastion once per host — an SSH login each, so it is not done on a timer")
+            }
             Button {
                 // Every member becomes a tab; MultiExec is then one toggle away.
                 for session in members { window.openTab(for: session) }
@@ -104,6 +128,22 @@ struct GroupDashboardView: View {
             .disabled(members.isEmpty)
         }
         .padding(14)
+    }
+
+    private func jumpDotColor(_ session: SessionConfig) -> Color {
+        switch health.status[session.id] {
+        case .up: return .green
+        case .down: return .red
+        case nil: return .secondary.opacity(0.35)
+        }
+    }
+
+    private func jumpHelp(_ session: SessionConfig) -> String {
+        switch health.status[session.id] {
+        case .up(let ms): return "Reachable through the jump host · \(ms) ms"
+        case .down(let reason): return reason
+        case nil: return "Reached through a jump host — press Check via Jump Host"
+        }
     }
 
     private func healthChip(count: Int, color: Color, label: String) -> some View {
@@ -131,12 +171,17 @@ struct GroupDashboardView: View {
             Spacer()
             if health.isEnabled, !session.isDirectlyProbeable,
                session.reachabilityTarget != nil {
-                // Reachable only through a bastion: polling it from here would
-                // be a red light on a healthy host.
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .help("Reached through a jump host — not polled from this Mac")
+                // The branch marks HOW it is reached; the dot still says
+                // whether it answered, once someone has asked.
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Circle()
+                        .fill(jumpDotColor(session))
+                        .frame(width: 7, height: 7)
+                }
+                .help(jumpHelp(session))
             } else if health.isEnabled, session.reachabilityTarget != nil {
                 let color: Color = {
                     switch health.status[session.id] {

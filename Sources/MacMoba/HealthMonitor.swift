@@ -13,7 +13,7 @@ import MacMobaCore
 @MainActor
 final class HealthMonitor: ObservableObject {
     /// Latest result per session id. Absent means "not checked yet".
-    @Published private(set) var status: [String: Reachability] = [:]
+    @Published var status: [String: Reachability] = [:]
     @Published var isEnabled = false {
         didSet {
             guard isEnabled != oldValue else { return }
@@ -29,6 +29,26 @@ final class HealthMonitor: ObservableObject {
 
     /// The sessions to watch — refreshed by the view from the vault each sweep.
     var sessionsProvider: () -> [SessionConfig] = { [] }
+    /// How to test a host that only the bastion can see. Set by AppState.
+    var jumpProbe: ((SessionConfig) async -> Reachability)?
+    /// True while a jump-host check is running, so the button can say so.
+    @Published private(set) var checkingViaJump = false
+
+    /// Check hosts behind a bastion, on demand. Sequential on purpose: these
+    /// are SSH logins, and a folder of ten machines must not open ten at once.
+    func checkViaJump(_ sessions: [SessionConfig]) {
+        guard let jumpProbe, !checkingViaJump else { return }
+        let targets = sessions.filter { !$0.isDirectlyProbeable && $0.reachabilityTarget != nil }
+        guard !targets.isEmpty else { return }
+        checkingViaJump = true
+        Task {
+            for session in targets {
+                let result = await jumpProbe(session)
+                status[session.id] = result
+            }
+            checkingViaJump = false
+        }
+    }
 
     private func start() {
         sweep()

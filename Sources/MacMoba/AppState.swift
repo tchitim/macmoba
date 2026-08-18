@@ -318,6 +318,10 @@ final class AppState: ObservableObject {
         observeSleepWake()
         startAppearanceObserver()
         startControlServer()
+        healthMonitor.jumpProbe = { [weak self] session in
+            guard let self else { return .down(reason: "quitting") }
+            return await self.probeViaJumpChain(session)
+        }
     }
 
     var vaultExists: Bool { vault.status != .none }
@@ -719,6 +723,26 @@ final class AppState: ObservableObject {
 
     func sessionName(for id: String) -> String {
         data.sessions.first { $0.id == id }?.name ?? "?"
+    }
+
+    /// Is a host behind a bastion actually reachable? Opening the forward IS
+    /// the proof: the chain authenticated and the target accepted the channel.
+    ///
+    /// This costs a real SSH login, which is why nothing calls it on a timer —
+    /// hammering a bastion every few seconds is how you end up locked out.
+    func probeViaJumpChain(_ session: SessionConfig) async -> Reachability {
+        let started = Date()
+        do {
+            let chain = try await SecretResolver.resolve(sessions: jumpChain(for: session))
+            let resolved = try await SecretResolver.resolve(session: resolved(session))
+            let route = try await RemoteDesktopRoute.open(
+                target: resolved, via: chain.last, viaHops: chain.dropLast().map { $0 },
+                hostKeys: hostKeyVerification)
+            route.close()
+            return .up(latencyMs: Int(Date().timeIntervalSince(started) * 1000))
+        } catch {
+            return .down(reason: "via jump host: \(error.localizedDescription)")
+        }
     }
 
     /// Fetch a one-shot resource snapshot (load/CPU/RAM/uptime) for an SSH

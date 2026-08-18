@@ -554,10 +554,29 @@ struct SessionRow: View {
     @ViewBuilder private var healthDot: some View {
         if health.isEnabled, session.reachabilityTarget != nil,
            !session.isDirectlyProbeable {
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 8))
-                .foregroundStyle(.tertiary)
-                .help("Reached through a jump host — not polled from this Mac")
+            // Branch = how it is reached; the dot still reports whether it
+            // answered the last time anyone checked through the bastion.
+            HStack(spacing: 2) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.tertiary)
+                Circle()
+                    .fill({ () -> Color in
+                        switch health.status[session.id] {
+                        case .up: return .green
+                        case .down: return .red
+                        case nil: return .secondary.opacity(0.3)
+                        }
+                    }())
+                    .frame(width: 6, height: 6)
+            }
+            .help({ () -> String in
+                switch health.status[session.id] {
+                case .up(let ms): return "Reachable through the jump host · \(ms) ms"
+                case .down(let reason): return reason
+                case nil: return "Reached through a jump host — check it from the folder dashboard"
+                }
+            }())
         } else if health.isEnabled, session.reachabilityTarget != nil {
             let color: Color = {
                 switch health.status[session.id] {
