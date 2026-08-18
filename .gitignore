@@ -22,3 +22,4 @@ Vendor/Mosh/bin/
 # Vendored FreeRDP build output (built by scripts/build-freerdp.sh).
 # Prebuilt arm64 static libs + headers, ~14 MB — reproducible, not source.
 Vendor/FreeRDP/
+.release/

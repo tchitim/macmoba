@@ -19,7 +19,13 @@ case "${1:-}" in
   --notarize) NOTARIZE=1; DMG=1 ;;   # notarize the DMG that gets shipped
   --adhoc)    ADHOC=1 ;;             # skip Developer ID even if a cert is installed
   --dmg)      DMG=1 ;;               # build a distributable disk image
+  --release)  NOTARIZE=1; DMG=1; RELEASE=1 ;;  # notarize, then publish to GitHub
 esac
+RELEASE="${RELEASE:-0}"
+# Where the appcast is assembled. Keeping the PREVIOUS dmg here is what lets
+# Sparkle compute a delta (a few KB instead of the whole 12 MB download).
+RELEASE_DIR="${MACMOBA_RELEASE_DIR:-.release}"
+GH_REPO="${MACMOBA_GH_REPO:-tchitim/macmoba}"
 NOTARY_PROFILE="${MACMOBA_NOTARY_PROFILE:-macmoba}"
 
 echo "Building release binary..."
@@ -27,7 +33,7 @@ swift build -c release
 
 APP=MacMoba.app
 BIN=.build/release/MacMoba
-VERSION=1.61
+VERSION=1.62
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -319,6 +325,62 @@ if (( NOTARIZE )); then
   xcrun stapler validate "$DMG_FILE"
   spctl --assess --type execute --verbose=2 "$APP"
   echo "Notarized and stapled — runs on any Mac without warnings."
+fi
+
+# --- Release: sign the appcast and publish to GitHub ---------------------------
+# The appcast is what installed copies check. Every enclosure in it points at
+# THIS tag's assets, so everything in $RELEASE_DIR is uploaded to this release —
+# including the previous dmg the delta was computed against.
+if (( RELEASE )); then
+  TAG="v${VERSION}"
+  command -v gh >/dev/null || { echo "ERROR: gh CLI not installed"; exit 1; }
+
+  if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+    echo "ERROR: release $TAG already exists on $GH_REPO."
+    echo "       Bump VERSION in this script, or delete the release first."
+    exit 1
+  fi
+  if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    echo "ERROR: working tree has uncommitted changes — commit them first so the"
+    echo "       release tag names the code it was built from."
+    exit 1
+  fi
+  git push origin HEAD >/dev/null 2>&1 || true
+
+  GENERATE_APPCAST="$(find .build/artifacts -name generate_appcast -type f 2>/dev/null | head -1)"
+  [[ -n "$GENERATE_APPCAST" ]] || { echo "ERROR: generate_appcast missing (build once first)"; exit 1; }
+
+  mkdir -p "$RELEASE_DIR"
+  cp "$DMG_FILE" "$RELEASE_DIR/"
+  # Only the last few builds are worth keeping: deltas are computed against
+  # them, and every one of them gets uploaded to this release.
+  ls -t "$RELEASE_DIR"/MacMoba-*.dmg 2>/dev/null | tail -n +3 | xargs -r rm -f
+  rm -f "$RELEASE_DIR"/appcast.xml "$RELEASE_DIR"/*.delta
+
+  echo "Signing appcast (EdDSA key from the login keychain) ..."
+  "$GENERATE_APPCAST" \
+    --download-url-prefix "https://github.com/${GH_REPO}/releases/download/${TAG}/" \
+    "$RELEASE_DIR" >/dev/null
+
+  echo "Publishing $TAG to $GH_REPO ..."
+  gh release create "$TAG" "$RELEASE_DIR"/* \
+    --repo "$GH_REPO" \
+    --title "MacMoba ${VERSION}" \
+    --notes "MacMoba ${VERSION}
+
+安裝:下載 \`MacMoba-${VERSION}.dmg\`,拖進「應用程式」。已 Developer ID 簽名 + Apple 公證。
+需求:macOS 13+、Apple Silicon。
+
+已安裝的版本會透過 App 內更新自動取得這一版。"
+
+  # The installed apps read exactly this URL — a release that does not serve it
+  # is a silent no-op, so check rather than assume.
+  FEED="https://github.com/${GH_REPO}/releases/latest/download/appcast.xml"
+  if curl -sfL "$FEED" | grep -q "<sparkle:version>${VERSION}</sparkle:version>"; then
+    echo "Feed serves ${VERSION}: $FEED"
+  else
+    echo "WARNING: $FEED does not offer ${VERSION} yet — check the release assets."
+  fi
 fi
 
 echo "Done: $APP"

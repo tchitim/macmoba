@@ -51,6 +51,13 @@ macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP
 
 RDP 需要先建置內含的 FreeRDP（產物不進版控，約 14 MB）：
 
+發佈新版（建置 → 公證 → 簽 appcast → 開 GitHub release → 驗證 feed）：
+
+```bash
+# 先改 make-app.sh 裡的 VERSION，提交，然後：
+./make-app.sh --release
+```
+
 ```bash
 ./scripts/build-freerdp.sh   # 一次性，產生 Vendor/FreeRDP
 ./scripts/build-mosh.sh      # Mosh 連線需要（GPLv3，獨立執行檔）
