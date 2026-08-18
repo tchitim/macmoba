@@ -18,16 +18,17 @@ struct GroupDashboardView: View {
         app.data.sessions.filter { GroupTree.contains(group, group: $0.group) }
     }
 
-    private var healthCounts: (up: Int, down: Int, unknown: Int) {
-        var up = 0, down = 0, unknown = 0
-        for s in members where s.isDirectlyProbeable {
+    private var healthCounts: (up: Int, down: Int, unknown: Int, viaJump: Int) {
+        var up = 0, down = 0, unknown = 0, viaJump = 0
+        for s in members where s.reachabilityTarget != nil {
+            guard s.isDirectlyProbeable else { viaJump += 1; continue }
             switch health.status[s.id] {
             case .up: up += 1
             case .down: down += 1
             case nil: unknown += 1
             }
         }
-        return (up, down, unknown)
+        return (up, down, unknown, viaJump)
     }
 
     var body: some View {
@@ -47,11 +48,24 @@ struct GroupDashboardView: View {
             if health.isEnabled {
                 let counts = healthCounts
                 HStack(spacing: 12) {
-                    healthChip(count: counts.up, color: .green, label: "up")
-                    healthChip(count: counts.down, color: .red, label: "down")
-                    if counts.unknown > 0 {
-                        healthChip(count: counts.unknown,
-                                   color: .secondary.opacity(0.5), label: "unchecked")
+                    // "0 up · 0 down" for a folder nobody can poll reads as a
+                    // failed check. Say what is actually true instead.
+                    if counts.up + counts.down + counts.unknown > 0 {
+                        healthChip(count: counts.up, color: .green, label: "up")
+                        healthChip(count: counts.down, color: .red, label: "down")
+                        if counts.unknown > 0 {
+                            healthChip(count: counts.unknown,
+                                       color: .secondary.opacity(0.5), label: "unchecked")
+                        }
+                    }
+                    if counts.viaJump > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("\(counts.viaJump) via jump host").font(.caption)
+                        }
+                        .help("Reached through a bastion — check one from the inspector")
                     }
                     Spacer()
                 }
