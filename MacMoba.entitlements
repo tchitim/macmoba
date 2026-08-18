@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Intentionally minimal.
+         MacMoba is NOT sandboxed: it needs arbitrary outbound SSH, ~/.ssh key
+         files, and to hand downloaded files to whichever editor the user picks.
+         Under hardened runtime a non-sandboxed app needs no entitlement for
+         keychain access, so none are requested.
+         Do NOT add keychain-access-groups with $(AppIdentifierPrefix) here —
+         codesign does not substitute Xcode build variables, and the literal
+         string makes launchd refuse to spawn the app ("Launch failed", 163). -->
+</dict>
+</plist>

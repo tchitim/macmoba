@@ -1,0 +1,24 @@
+# Build products
+.build/
+MacMoba.app/
+*.dmg
+
+# Signing / notarisation artefacts — never commit
+*.p12
+*.cer
+*.provisionprofile
+dsa_priv.pem
+eddsa_priv.key
+
+# Node test server deps
+TestSupport/node_modules/
+
+# Vendored mosh build output (built by scripts/build-mosh.sh)
+Vendor/Mosh/bin/
+
+# macOS
+.DS_Store
+
+# Vendored FreeRDP build output (built by scripts/build-freerdp.sh).
+# Prebuilt arm64 static libs + headers, ~14 MB — reproducible, not source.
+Vendor/FreeRDP/

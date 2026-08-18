@@ -1,0 +1,24 @@
+Mosh — written offer for source code
+===================================
+
+MacMoba includes an unmodified copy of mosh-client from Mosh 1.4.0, which is
+free software licensed under the GNU General Public License version 3 or later.
+The full licence text is in COPYING, alongside this file.
+
+mosh-client runs as a separate program. MacMoba starts it as a child process
+and communicates with it over a pseudo-terminal; it is not linked into MacMoba.
+
+Complete corresponding source code
+----------------------------------
+
+The exact source used to build the included binary is the official release:
+
+    https://github.com/mobile-shell/mosh/releases/download/mosh-1.4.0/mosh-1.4.0.tar.gz
+
+It was built unmodified, using scripts/build-mosh.sh in the MacMoba source
+tree, which records the exact configure flags and the pinned protobuf version.
+
+As required by GPLv3 section 6, you may also obtain the complete corresponding
+source code from the MacMoba authors for no more than the cost of distribution.
+
+Mosh is copyright Keith Winstein and the Mosh contributors.
