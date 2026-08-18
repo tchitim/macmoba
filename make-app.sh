@@ -354,8 +354,9 @@ if (( RELEASE )); then
   cp "$DMG_FILE" "$RELEASE_DIR/"
   # Only the last few builds are worth keeping: deltas are computed against
   # them, and every one of them gets uploaded to this release.
-  ls -t "$RELEASE_DIR"/MacMoba-*.dmg 2>/dev/null | tail -n +3 | xargs -r rm -f
-  rm -f "$RELEASE_DIR"/appcast.xml "$RELEASE_DIR"/*.delta
+  # (N) is zsh's null glob: without it an empty match aborts the script.
+  ls -t "$RELEASE_DIR"/MacMoba-*.dmg(N) | tail -n +3 | xargs -r rm -f
+  rm -f "$RELEASE_DIR"/appcast.xml(N) "$RELEASE_DIR"/*.delta(N)
 
   echo "Signing appcast (EdDSA key from the login keychain) ..."
   "$GENERATE_APPCAST" \
@@ -363,7 +364,7 @@ if (( RELEASE )); then
     "$RELEASE_DIR" >/dev/null
 
   echo "Publishing $TAG to $GH_REPO ..."
-  gh release create "$TAG" "$RELEASE_DIR"/* \
+  gh release create "$TAG" "$RELEASE_DIR"/*(N) \
     --repo "$GH_REPO" \
     --title "MacMoba ${VERSION}" \
     --notes "MacMoba ${VERSION}
