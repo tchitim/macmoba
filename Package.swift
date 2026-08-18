@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "MacMobaCore",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v14)
     ],
     products: [
         .library(name: "MacMobaCore", targets: ["MacMobaCore"]),

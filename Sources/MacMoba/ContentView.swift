@@ -12,7 +12,7 @@ struct ContentView: View {
     /// because NavigationSplitView needs a binding it can also write to when the
     /// user drags the sidebar closed themselves.
     @State private var columns: NavigationSplitViewVisibility = .all
-    @StateObject private var health = HealthMonitor()
+    private var health: HealthMonitor { app.healthMonitor }
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
@@ -46,7 +46,8 @@ struct ContentView: View {
         // fragile propertyList path out of the app entirely.
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                Toggle(isOn: $health.isEnabled) {
+                Toggle(isOn: Binding(get: { health.isEnabled },
+                                     set: { health.isEnabled = $0 })) {
                     Label("Health", systemImage: health.isEnabled
                           ? "heart.text.square.fill" : "heart.text.square")
                 }

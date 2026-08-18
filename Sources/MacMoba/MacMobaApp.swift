@@ -239,6 +239,12 @@ struct MacMobaCommands: Commands {
             Button("Overview") { window?.showOverview = true }
                 .keyboardShortcut("0", modifiers: [.command, .shift])
                 .disabled(window == nil)
+            // Also in the toolbar, but a toolbar icon can overflow into the
+            // chevron on a narrow window — and an icon is not something you
+            // can look up. The menu is where a feature is findable.
+            Toggle("Health Monitoring", isOn: Binding(
+                get: { app.healthMonitor.isEnabled },
+                set: { app.healthMonitor.isEnabled = $0 }))
             Button(window?.showInspector == true ? "Hide Inspector" : "Show Inspector") {
                 window?.showInspector.toggle()
             }

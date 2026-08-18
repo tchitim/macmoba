@@ -16,7 +16,7 @@ App 已經過 **Developer ID 簽名與 Apple 公證**，第一次開啟不會跳
 
 | 項目 | 需求 |
 |---|---|
-| macOS | 13 Ventura 以上 |
+| macOS | 14 Sonoma 以上 |
 | 處理器 | **Apple Silicon（arm64）** |
 | 磁碟 | 約 40 MB |
 

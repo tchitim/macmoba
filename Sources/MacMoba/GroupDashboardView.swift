@@ -55,6 +55,21 @@ struct GroupDashboardView: View {
                     }
                     Spacer()
                 }
+            } else {
+                // Coming here to see health and finding nothing, with no reason
+                // given, is the failure this avoids: monitoring is off by
+                // default (it polls every saved host), so say so and offer it.
+                HStack(spacing: 8) {
+                    Image(systemName: "heart.text.square")
+                        .foregroundStyle(.secondary)
+                    Text("Health monitoring is off")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Turn On") { health.isEnabled = true }
+                        .controlSize(.small)
+                    Spacer()
+                }
+                .help("Polls the hosts in this folder and shows a light for each")
             }
             Divider()
             ScrollView {

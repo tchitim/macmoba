@@ -46,6 +46,9 @@ struct SidebarView: View {
     @State private var renameGroupText = ""
     @State private var dropGroupTarget: String? // group name, or "" for ungroup
     @State private var searchText = ""
+    /// Type-select: letters typed with the list focused jump to a connection,
+    /// the way they do in Finder. See TypeSelect for the two rules.
+    @State private var typeSelect = TypeSelectBuffer()
 
     private var isSearching: Bool {
         !searchText.trimmingCharacters(in: .whitespaces).isEmpty
@@ -61,6 +64,12 @@ struct SidebarView: View {
     /// searching so the list is only what matched.
     private var visibleGroups: [String] {
         app.sessionGroups.filter { !matchingSessions(inGroup: $0).isEmpty || !isSearching }
+    }
+
+    /// Every session in the order it appears on screen — what type-select walks.
+    private var typeSelectTargets: [SessionConfig] {
+        displayGroupRows.flatMap { matchingSessions(inGroup: $0.path) }
+            + matchingSessions(inGroup: nil)
     }
 
     /// The folder rows to draw, depth-first with implied parents. While
@@ -175,6 +184,27 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        // Typing letters selects the matching connection. Only plain characters
+        // are taken: modifiers stay with the menus, and arrows/space keep their
+        // list behaviour, so this never eats a key the list needs.
+        .onKeyPress(phases: .down) { press in
+            guard press.modifiers.isDisjoint(with: [.command, .control, .option]),
+                  let character = press.characters.first,
+                  TypeSelectBuffer.isSearchable(character) else {
+                return .ignored
+            }
+            let prefix = typeSelect.append(character,
+                                           at: Date().timeIntervalSinceReferenceDate)
+            let sessions = typeSelectTargets
+            let names = sessions.map(\.name)
+            let current = sessions.firstIndex { $0.id == window.selectedSessionID }
+            guard let hit = TypeSelect.match(prefix: prefix, in: names, current: current) else {
+                return .handled
+            }
+            window.selectedSessionID = sessions[hit].id
+            window.selectedGroup = nil
+            return .handled
+        }
         // The management home for macros / credentials / templates: one quiet
         // button, not three permanent sections (P1-4).
         Divider()

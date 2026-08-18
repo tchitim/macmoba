@@ -43,7 +43,7 @@ macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP
 
 從 [Releases](../../releases/latest) 下載 DMG。已經 Developer ID 簽名 + Apple 公證。
 
-需求：**macOS 13+**、**Apple Silicon**。詳見[入門指南](docs/getting-started.md)。
+需求：**macOS 14+**、**Apple Silicon**。詳見[入門指南](docs/getting-started.md)。
 
 ---
 

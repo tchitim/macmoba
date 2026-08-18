@@ -33,7 +33,7 @@ swift build -c release
 
 APP=MacMoba.app
 BIN=.build/release/MacMoba
-VERSION=1.62
+VERSION=1.63
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -122,7 +122,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key>
     <string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>

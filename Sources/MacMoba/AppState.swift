@@ -286,6 +286,10 @@ final class AppState: ObservableObject {
     let hostKeyVerification: HostKeyVerification
     /// The scriptability socket (cmux-style); see ControlCommands.swift.
     var controlServer: ControlServer?
+    /// Reachability polling. Lives here rather than per-window: it watches the
+    /// vault's sessions, which every window shares — and a menu command needs
+    /// to reach it without going through a window.
+    let healthMonitor = HealthMonitor()
     /// Kept as the concrete type as well: `HostKeyVerification.store` is the
     /// protocol, which deliberately only knows how to look up and pin. Review
     /// and revocation need the store itself.
