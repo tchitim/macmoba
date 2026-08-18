@@ -27,7 +27,7 @@ swift build -c release
 
 APP=MacMoba.app
 BIN=.build/release/MacMoba
-VERSION=1.59
+VERSION=1.60
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -56,6 +56,17 @@ if (( ${#DYLIBS} )); then
   install_name_tool -add_rpath "@executable_path/../Frameworks" \
     "$APP/Contents/MacOS/MacMoba" 2>/dev/null || true
   echo "Embedded ${#DYLIBS} dynamic librar$( (( ${#DYLIBS} == 1 )) && echo y || echo ies )."
+fi
+
+# Sparkle, for in-app updates. Copied whole: the framework carries its own
+# XPC services and Updater.app, which are nested code and get signed below.
+SPARKLE_FW="$(find .build/artifacts -name Sparkle.framework -maxdepth 6 -type d 2>/dev/null | head -1)"
+if [[ -n "$SPARKLE_FW" ]]; then
+  mkdir -p "$APP/Contents/Frameworks"
+  cp -R "$SPARKLE_FW" "$APP/Contents/Frameworks/"
+  echo "Embedded Sparkle.framework."
+else
+  echo "NOTE: Sparkle.framework not found — build once with 'swift build' first."
 fi
 
 # The control-socket CLI. Built as "macmoba-cli" (case-insensitive APFS would
@@ -131,6 +142,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
             </array>
         </dict>
     </array>
+    <!-- In-app updates (Sparkle). The private EdDSA key lives in the login
+         keychain and signs each DMG at release time; this public half is what
+         the installed app checks the download against, on top of the Developer
+         ID signature. -->
+    <key>SUFeedURL</key>
+    <string>https://github.com/tchitim/macmoba/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>BUsDV4a3zS+5qNiEPCv5XRBpGXFSlbJIdTm5xMvyVlU=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
+    <!-- Ask before downloading: an update swaps the app under a live session. -->
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
     <!-- Quick-connect URL schemes: clicking ssh://user@host (in a browser,
          Notes, wherever) opens a session. Viewer role — we connect, not own. -->
     <key>CFBundleURLTypes</key>
@@ -195,6 +221,25 @@ sign_nested() {
   # mosh-client is a second Mach-O binary in the bundle, so it is nested code
   # too: unsigned, the outer signature seals it and --verify --strict fails,
   # and notarisation rejects the whole app.
+  # Sparkle's nested code, innermost first: XPC services and the updater apps
+  # are separate bundles, and an unsigned one inside a signed framework fails
+  # --verify --strict and notarisation.
+  local sparkle="$APP/Contents/Frameworks/Sparkle.framework"
+  if [[ -d "$sparkle" ]]; then
+    for nested in \
+      "$sparkle/Versions/B/XPCServices/Downloader.xpc" \
+      "$sparkle/Versions/B/XPCServices/Installer.xpc" \
+      "$sparkle/Versions/B/Updater.app" \
+      "$sparkle/Versions/B/Autoupdate" \
+      "$sparkle"; do
+      [[ -e "$nested" ]] || continue
+      if [[ "$identity" == "-" ]]; then
+        codesign --force --sign - "$nested"
+      else
+        codesign --force --options runtime --timestamp --sign "$identity" "$nested"
+      fi
+    done
+  fi
   for cli in "$APP"/Contents/Resources/bin/*(N); do
     if [[ "$identity" == "-" ]]; then
       codesign --force --sign - "$cli"

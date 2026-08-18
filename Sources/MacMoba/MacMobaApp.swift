@@ -42,6 +42,7 @@ final class MacMobaAppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct MacMobaApp: App {
     @StateObject private var app = AppState()
+    @StateObject private var updates = UpdateController()
     @NSApplicationDelegateAdaptor(MacMobaAppDelegate.self) private var delegate
 
     init() {
@@ -69,7 +70,13 @@ struct MacMobaApp: App {
                 .environmentObject(app)
                 .frame(minWidth: 900, minHeight: 560)
         }
-        .commands { MacMobaCommands(app: app) }
+        .commands {
+            MacMobaCommands(app: app)
+            // Sits in the app menu, next to About — where every Mac app keeps it.
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesCommand(controller: updates)
+            }
+        }
 
         // The management home for macros / credentials / templates (P1-4):
         // one window, opened on demand, instead of three permanent sidebar

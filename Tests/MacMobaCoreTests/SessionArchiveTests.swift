@@ -18,7 +18,7 @@ final class SessionArchiveTests: XCTestCase {
                               passphrase: "unlock-me"),
                 SessionConfig(id: "s3", name: "win", host: "10.0.0.9", port: 3389,
                               username: "Administrator", authType: "password",
-                              password: "P@ssw0rd", kind: "rdp"),
+                              password: "fixture-pw", kind: "rdp"),
             ],
             tunnels: [],
             macros: [MacroConfig(id: "m1", name: "deploy", command: "make deploy")]
@@ -32,7 +32,7 @@ final class SessionArchiveTests: XCTestCase {
         let archive = SessionExport.archive(from: sampleVault(), includeSecrets: false, now: now)
         let json = String(decoding: try SessionExport.plainJSON(archive), as: UTF8.self)
 
-        for secret in ["hunter2", "unlock-me", "P@ssw0rd", "BEGIN KEY"] {
+        for secret in ["hunter2", "unlock-me", "fixture-pw", "BEGIN KEY"] {
             XCTAssertFalse(json.contains(secret), "\(secret) leaked into a plain export")
         }
         // ...and it is still a useful file.
@@ -70,7 +70,7 @@ final class SessionArchiveTests: XCTestCase {
         let archive = SessionExport.archive(from: sampleVault(), includeSecrets: true, now: now)
         let data = try SessionExport.encrypted(archive, password: "pw")
         let text = String(decoding: data, as: UTF8.self)
-        for secret in ["hunter2", "unlock-me", "P@ssw0rd", "web.example.com", "Administrator"] {
+        for secret in ["hunter2", "unlock-me", "fixture-pw", "web.example.com", "Administrator"] {
             XCTAssertFalse(text.contains(secret), "\(secret) is readable in the encrypted file")
         }
         XCTAssertTrue(text.contains("session-export"), "should still be identifiable as ours")

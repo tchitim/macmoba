@@ -26,6 +26,10 @@ let package = Package(
         // revision pin is still reproducible. 60a92e1 is tag 1.0.0.
         .package(url: "https://github.com/royalapplications/royalvnc.git",
                  revision: "60a92e1a60e928b29c16230598efd5a97c134139"),
+        // In-app updates (the standard for Developer ID apps outside the App
+        // Store): checks an appcast, verifies an EdDSA signature AND the
+        // Developer ID signature, then swaps the bundle and relaunches.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
     ],
     targets: [
         .target(
@@ -88,6 +92,7 @@ let package = Package(
         .executableTarget(
             name: "MacMoba",
             dependencies: [
+                .product(name: "Sparkle", package: "Sparkle"),
                 "MacMobaCore",
                 "CMacMobaRDP",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
