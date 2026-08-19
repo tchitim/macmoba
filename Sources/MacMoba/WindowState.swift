@@ -14,6 +14,13 @@ final class WindowState: ObservableObject {
     @Published var tabs: [SessionTab] = []
     @Published var selectedTabID: UUID? {
         didSet {
+            // The tab being left is still on screen at this point — a moment
+            // later SwiftUI takes its view out of the window and it can no
+            // longer be photographed. This is the only chance to keep a
+            // thumbnail for the Overview.
+            if oldValue != selectedTabID {
+                tabs.first { $0.id == oldValue }?.cacheSnapshot()
+            }
             // Viewing a local tab satisfies its agent-hook attention.
             tabs.first { $0.id == selectedTabID }?.localTerminal?.clearAttention()
         }

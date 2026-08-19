@@ -245,18 +245,42 @@ final class SessionTab: ObservableObject, Identifiable {
         return focusedPane?.termView
     }
 
-    /// A bitmap of the current view for the Overview, or nil when it is not laid
-    /// out on screen yet (a background tab in a window that was never shown).
+    /// The last picture taken of this tab, for when it cannot be taken now.
+    /// Only one tab is in the window at a time, so every other card in the
+    /// Overview would otherwise be a bare icon.
+    private var lastSnapshot: NSImage?
+
+    /// Photograph this tab while it is still on screen. Called as the tab is
+    /// left, which is the last moment its view is in a window.
+    func cacheSnapshot() {
+        if let image = liveSnapshot() { lastSnapshot = image }
+    }
+
+    /// A bitmap of this tab for the Overview: taken now if the tab is on
+    /// screen, otherwise the last one taken, otherwise nil (a tab restored at
+    /// launch and never opened has never been drawn).
     func snapshot() -> NSImage? {
-        guard let view = snapshotView, view.window != nil,
+        if let image = liveSnapshot() {
+            lastSnapshot = image
+            return image
+        }
+        return lastSnapshot
+    }
+
+    private func liveSnapshot() -> NSImage? {
+        guard let view = snapshotView,
               view.bounds.width > 1, view.bounds.height > 1 else { return nil }
         // A remote desktop hands us a finished frame and assigns it straight to
         // `layer.contents`; it has no `draw(_:)` for `cacheDisplay` to replay,
-        // so that path yields an empty card. The frame we want IS that image.
+        // so that path yields an empty card. The frame we want IS that image —
+        // and because it lives in the layer, it survives the view being taken
+        // out of the window, so a background tab still has a picture.
         if vnc != nil || rdp != nil, let framebuffer = framebufferImage(in: view) {
             return framebuffer
         }
-        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        // Drawing, unlike a stored frame, needs the view to be in a window.
+        guard view.window != nil,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
         view.cacheDisplay(in: view.bounds, to: rep)
         let image = NSImage(size: view.bounds.size)
         image.addRepresentation(rep)
