@@ -10,12 +10,13 @@
 //
 // The cursor you see over a VNC session is the local NSCursor: RoyalVNC
 // hard-codes the cursor pseudo-encoding, so the server draws no pointer into
-// the framebuffer and rendering it is the client's job. Rather than hide it and
-// draw a copy — which showed the wrong shape, an I-beam on the remote's own
-// desktop — the real cursor is left visible and warped to the tracked
-// position. Warping does not produce hardware movement, so it cannot feed back
-// into the deltas, and what is drawn is exactly what an uncaptured session
-// draws, because it is the same cursor.
+// the framebuffer and rendering it is the client's job. It is therefore hidden
+// and drawn here, at the position being tracked.
+//
+// Warping the real cursor instead was tried and reverted: every warp starts an
+// event-suppression interval, and warping on each event made movement lurch.
+// Nothing repositions the cursor here — it stays parked, invisible, and only
+// the drawn copy moves.
 
 import AppKit
 import MacMobaCore
@@ -25,6 +26,7 @@ import RoyalVNCKit
 final class RemotePointerSession {
     private weak var view: VNCCAFramebufferView?
     private var pointer: RelativePointer
+    private let cursorLayer = RemoteCursorView()
     private var restoreMouseMoved: Bool?
 
     /// - Parameter viewPoint: where the grabbing click landed, in the
@@ -42,12 +44,13 @@ final class RemotePointerSession {
             restoreMouseMoved = window.acceptsMouseMovedEvents
             window.acceptsMouseMovedEvents = true
         }
-        // Warping normally starts a suppression interval — a quarter second in
-        // which macOS throws mouse movement away, so that a warp does not fight
-        // the hand. Warping on every event means living inside that interval:
-        // movement stalls, then arrives in one lump. Zero it for our own events.
+        // The one warp we still do — putting the cursor back on release — must
+        // not swallow the movement that follows it.
         CGEventSource(stateID: .combinedSessionState)?.localEventsSuppressionInterval = 0
         CGAssociateMouseAndMouseCursorPosition(0)
+        NSCursor.hide()
+        view.addSubview(cursorLayer)
+        redrawCursor()
     }
 
     // MARK: - input
@@ -59,12 +62,10 @@ final class RemotePointerSession {
         pointer.move(dx: dx, dy: dy, scale: view.scaleRatio)
         let point = pointer.framebufferPoint
         view.connection?.mouseMove(x: point.x, y: point.y)
-        warpCursorToTrackedPosition()
+        redrawCursor()
     }
 
-    /// Move the drawn cursor to where the remote pointer now is. The pointer is
-    /// decoupled, so this only repositions what is on screen — no hardware
-    /// movement is generated and the next delta is still a real one.
+    /// Only used when letting go: while captured the real cursor never moves.
     private func warpCursorToTrackedPosition() {
         guard let view, let window = view.window else { return }
         let inView = Self.viewPoint(of: pointer.position, in: view)
@@ -105,13 +106,35 @@ final class RemotePointerSession {
     // MARK: - teardown
 
     func end() {
+        cursorLayer.removeFromSuperview()
         // Leave the cursor where the remote pointer was, then hand it back to
         // the hardware: re-associating from anywhere else would teleport it.
         warpCursorToTrackedPosition()
         CGAssociateMouseAndMouseCursorPosition(1)
+        NSCursor.unhide()
         if let window = view?.window, let restoreMouseMoved {
             window.acceptsMouseMovedEvents = restoreMouseMoved
         }
+    }
+
+    // MARK: - drawing the remote cursor
+
+    private func redrawCursor() {
+        guard let view else { return }
+        let cursor = view.currentCursor
+        let image = cursor.image
+        // A cursor image can be Retina: more pixels than points. Its `size` is
+        // the size to DRAW it at, and the view scales the representation to
+        // fit — drawing it unscaled put the pixels at point size instead, so
+        // all that fitted in the frame was a sliver of the arrow.
+        let size = image.size.width > 0 && image.size.height > 0 ? image.size : CGSize(width: 16, height: 16)
+        if cursorLayer.image !== image { cursorLayer.image = image }
+        let point = Self.viewPoint(of: pointer.position, in: view)
+        // `hotSpot` is measured from the image's top-left; a view's origin is
+        // its bottom-left.
+        cursorLayer.frame = CGRect(x: point.x - cursor.hotSpot.x,
+                                   y: point.y - (size.height - cursor.hotSpot.y),
+                                   width: size.width, height: size.height)
     }
 
     // MARK: - coordinates
@@ -136,4 +159,22 @@ final class RemotePointerSession {
         return CGPoint(x: rect.origin.x + framebufferPoint.x * scale,
                        y: view.bounds.height - (rect.origin.y + framebufferPoint.y * scale))
     }
+}
+
+/// The remote cursor, drawn by us because the real one is hidden. Transparent
+/// to the mouse — it sits under the pointer by definition, so hit-testing it
+/// would swallow every click.
+private final class RemoteCursorView: NSImageView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        // Proportional, NOT `.scaleNone`: a Retina cursor has more pixels than
+        // points, and drawing it unscaled clipped it to a fragment.
+        imageScaling = .scaleProportionallyUpOrDown
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
 }
