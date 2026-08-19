@@ -50,7 +50,13 @@ final class VNCKeyboardBridge: ObservableObject {
             matching: [.keyDown, .keyUp, .leftMouseDown, .mouseMoved, .leftMouseDragged,
                        .rightMouseDragged, .otherMouseDragged]
         ) { [weak self] event in
-            self?.handle(event) ?? event
+            // Unwrapped in two steps on purpose. `self?.handle(event) ?? event`
+            // reads the same but is not: optional chaining flattens "no bridge"
+            // and "handled, swallow it" into one nil, so `?? event` puts a key
+            // we already sent back into the responder chain — and the remote
+            // receives it twice.
+            guard let self else { return event }
+            return self.handle(event)
         }
         // Losing focus must drop the grab, or a capture survives ⌘Tab and the
         // keyboard appears dead in whatever the user switched to.
