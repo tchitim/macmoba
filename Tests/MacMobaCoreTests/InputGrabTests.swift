@@ -109,12 +109,42 @@ final class InputGrabTests: XCTestCase {
     func testPointerStopsAtTheEdgesOfTheRemoteScreen() {
         var pointer = RelativePointer(position: CGPoint(x: 10, y: 10),
                                       size: CGSize(width: 800, height: 600))
-        pointer.move(dx: -9_999, dy: -9_999, scale: 1)
+        for _ in 0..<10 { pointer.move(dx: -250, dy: -250, scale: 1) }
         XCTAssertEqual(pointer.position, .zero)
-        pointer.move(dx: 9_999, dy: 9_999, scale: 1)
+        for _ in 0..<10 { pointer.move(dx: 250, dy: 250, scale: 1) }
         XCTAssertEqual(pointer.position, CGPoint(x: 799, y: 599))
         XCTAssertEqual(pointer.framebufferPoint.x, 799)
         XCTAssertEqual(pointer.framebufferPoint.y, 599)
+    }
+
+    /// The jump the user hit: a warp moves the cursor underneath us and the
+    /// next report carries that displacement, throwing the pointer across the
+    /// screen. Nothing a hand does covers half a screen between two reports.
+    func testAnImpossibleSingleStepIsDiscarded() {
+        var pointer = RelativePointer(position: CGPoint(x: 400, y: 300),
+                                      size: CGSize(width: 800, height: 600))
+        pointer.move(dx: 500, dy: 0, scale: 1)
+        XCTAssertEqual(pointer.position, CGPoint(x: 400, y: 300), "should have been ignored")
+        pointer.move(dx: 0, dy: 400, scale: 1)
+        XCTAssertEqual(pointer.position, CGPoint(x: 400, y: 300), "should have been ignored")
+    }
+
+    /// The limit is on the step in REMOTE pixels, so a scaled-down window —
+    /// where a small hand movement covers a lot of remote screen — is judged on
+    /// what it actually does to the pointer.
+    func testTheLimitAppliesAfterScaling() {
+        var pointer = RelativePointer(position: CGPoint(x: 400, y: 300),
+                                      size: CGSize(width: 800, height: 600))
+        pointer.move(dx: 100, dy: 0, scale: 0.2)   // 500 remote pixels
+        XCTAssertEqual(pointer.position, CGPoint(x: 400, y: 300))
+        pointer.move(dx: 100, dy: 0, scale: 1)     // 100 remote pixels, plausible
+        XCTAssertEqual(pointer.position, CGPoint(x: 500, y: 300))
+    }
+
+    func testOrdinaryFastMovementStillCounts() {
+        var pointer = RelativePointer(position: .zero, size: CGSize(width: 1920, height: 1080))
+        pointer.move(dx: 300, dy: 200, scale: 1)
+        XCTAssertEqual(pointer.position, CGPoint(x: 300, y: 200))
     }
 
     func testAStartingPointOutsideTheScreenIsPulledIn() {

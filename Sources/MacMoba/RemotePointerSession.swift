@@ -42,6 +42,11 @@ final class RemotePointerSession {
             restoreMouseMoved = window.acceptsMouseMovedEvents
             window.acceptsMouseMovedEvents = true
         }
+        // Warping normally starts a suppression interval — a quarter second in
+        // which macOS throws mouse movement away, so that a warp does not fight
+        // the hand. Warping on every event means living inside that interval:
+        // movement stalls, then arrives in one lump. Zero it for our own events.
+        CGEventSource(stateID: .combinedSessionState)?.localEventsSuppressionInterval = 0
         CGAssociateMouseAndMouseCursorPosition(0)
     }
 

@@ -69,10 +69,17 @@ public struct RelativePointer: Equatable {
     /// Apply one mouse-moved event. `scale` is how many view points the remote
     /// draws each pixel at, so dividing by it converts hand movement into
     /// remote pixels.
+    ///
+    /// A single event that would cross half the remote screen is discarded. No
+    /// hand produces that between two mouse reports; what does produce it is
+    /// the cursor being repositioned underneath us, and letting one through
+    /// throws the pointer to the far side of the screen.
     public mutating func move(dx: CGFloat, dy: CGFloat, scale: CGFloat) {
         let scale = scale > 0 ? scale : 1
-        position = Self.clamped(CGPoint(x: position.x + dx / scale,
-                                        y: position.y + dy / scale), in: size)
+        let step = CGPoint(x: dx / scale, y: dy / scale)
+        guard abs(step.x) < size.width / 2, abs(step.y) < size.height / 2 else { return }
+        position = Self.clamped(CGPoint(x: position.x + step.x,
+                                        y: position.y + step.y), in: size)
     }
 
     /// What to put in a VNC pointer event.

@@ -43,6 +43,8 @@ final class VNCKeyboardBridge: ObservableObject {
     /// Present exactly while the pointer is decoupled and we are driving the
     /// remote one ourselves.
     private var pointer: RemotePointerSession?
+    /// A capture that focus loss interrupted, waiting to be picked back up.
+    private weak var suspended: VNCCAFramebufferView?
     private var previousHotKeyMode: UnsafeMutableRawPointer?
     private var escapeGesture = DoubleEscapeRelease()
     private var observers: [NSObjectProtocol] = []
@@ -65,18 +67,31 @@ final class VNCKeyboardBridge: ObservableObject {
             return self.handle(event)
         }
         // Losing focus must drop the grab, or a capture survives ⌘Tab and the
-        // keyboard appears dead in whatever the user switched to.
+        // keyboard appears dead in whatever the user switched to. It is only
+        // suspended, though: something else stealing focus for a moment should
+        // not cost the session, so coming back restores it.
         for name in [NSApplication.didResignActiveNotification, NSWindow.didResignKeyNotification] {
             observers.append(NotificationCenter.default.addObserver(
                 forName: name, object: nil, queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.releaseGrab() }
+                MainActor.assumeIsolated { self?.suspendGrab() }
+            })
+        }
+        for name in [NSApplication.didBecomeActiveNotification, NSWindow.didBecomeKeyNotification] {
+            observers.append(NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.resumeGrabIfSuspended() }
             })
         }
     }
 
-    /// Public release, for the menu and for turning capture off.
-    func release() { releaseGrab() }
+    /// Public release, for the menu and for turning capture off. Deliberate, so
+    /// it does not come back on its own.
+    func release() {
+        suspended = nil
+        releaseGrab()
+    }
 
     // MARK: - the monitor
 
@@ -205,6 +220,25 @@ final class VNCKeyboardBridge: ObservableObject {
         UserDefaults.standard.set(true, forKey: key)
         let prompt = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
+    }
+
+    /// Give the keyboard back because something else took focus, remembering
+    /// where we were so that returning picks it up again.
+    private func suspendGrab() {
+        guard isGrabbed, let grabbedView else { return }
+        suspended = grabbedView
+        releaseGrab()
+    }
+
+    private func resumeGrabIfSuspended() {
+        guard let view = suspended, !isGrabbed, capturesOnClick else { return }
+        // Only if that pane is still the one in front: the user may have come
+        // back to a different tab or window entirely.
+        guard NSApp.isActive, NSApp.keyWindow?.firstResponder === view else { return }
+        suspended = nil
+        // Resume where the pointer was, not where the cursor happens to sit.
+        grab(view, at: view.convert(view.window?.mouseLocationOutsideOfEventStream ?? .zero,
+                                    from: nil))
     }
 
     private func releaseGrab() {
