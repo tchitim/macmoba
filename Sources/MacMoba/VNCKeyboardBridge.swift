@@ -49,6 +49,11 @@ final class VNCKeyboardBridge: ObservableObject {
     /// "never triggered" from "sent, and the remote ignored it" is otherwise
     /// guesswork.
     private(set) var lastTypedKeyCount: Int?
+    /// The last ⌘/⌥ chord the monitor actually saw, with what the key code
+    /// translated to. "The shortcut does nothing" has two very different
+    /// causes — the event never arriving, and the test for it not matching —
+    /// and from outside they look identical.
+    private(set) var lastChordSeen: String?
     private var previousHotKeyMode: UnsafeMutableRawPointer?
     /// The one release gesture. Escape twice was offered too and taken back
     /// out: both presses are forwarded on purpose, so any remote that reads
@@ -113,6 +118,7 @@ final class VNCKeyboardBridge: ObservableObject {
         event monitor installed: \(monitor != nil)
         capture on click: \(capturesOnClick) · captured now: \(isGrabbed)
         release gesture: Control-Option
+        last ⌘/⌥ chord seen by the monitor: \(lastChordSeen ?? "none")
         """
     }
 
@@ -273,6 +279,15 @@ final class VNCKeyboardBridge: ObservableObject {
         // is captured, which is when the menu bar is out of reach. Checked
         // before the focus guard below, and against the whole window: a paste
         // that only works when focus happens to be right is not much of one.
+        if event.type == .keyDown, event.modifierFlags.contains(.command)
+            || event.modifierFlags.contains(.option) {
+            let translated = ASCIIKeyboard.character(forKeyCode: event.keyCode, shift: false)
+            let flags = event.modifierFlags
+            lastChordSeen = "keyCode \(event.keyCode) → \(translated.map { "\"\($0)\"" } ?? "nil")"
+                + " · command \(flags.contains(.command)) option \(flags.contains(.option))"
+                + " · desktop found \(focusedFramebufferView != nil)"
+        }
+
         if event.modifierFlags.contains([.command, .option]),
            ASCIIKeyboard.character(forKeyCode: event.keyCode, shift: false) == "v",
            let desktop = focusedFramebufferView, let target = desktop.connection {
