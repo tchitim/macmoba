@@ -86,6 +86,49 @@ final class VNCKeyboardBridge: ObservableObject {
         }
     }
 
+    /// Type what is on the clipboard into the focused remote desktop.
+    ///
+    /// Paced deliberately: a remote Mac processes synthesised keys through the
+    /// same path as a physical keyboard, and a burst arriving in one frame gets
+    /// dropped or reordered. A few milliseconds per key is imperceptible for a
+    /// password or a command and reliable for a paragraph.
+    func typeClipboard(into connection: VNCConnection) {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        let keysyms = RemoteTyping.keysyms(for: text)
+        guard !keysyms.isEmpty else { return }
+        Task {
+            for keysym in keysyms {
+                let key = VNCKeyCode(keysym)
+                connection.keyDown(key)
+                connection.keyUp(key)
+                try? await Task.sleep(nanoseconds: 6_000_000)
+            }
+        }
+    }
+
+    /// Types the clipboard into whichever remote desktop is in front, for the
+    /// menu — the keyboard route needs one to be focused, and this does not.
+    func typeClipboardIntoFocusedDesktop() -> Bool {
+        guard let view = focusedFramebufferView, let connection = view.connection else { return false }
+        typeClipboard(into: connection)
+        return true
+    }
+
+    private var focusedFramebufferView: VNCCAFramebufferView? {
+        if let view = NSApp.keyWindow?.firstResponder as? VNCCAFramebufferView { return view }
+        // Falls back to searching the key window, so the menu item works even
+        // when focus sits somewhere else in the window.
+        return NSApp.keyWindow?.contentView.flatMap(Self.findFramebufferView)
+    }
+
+    private static func findFramebufferView(in view: NSView) -> VNCCAFramebufferView? {
+        if let match = view as? VNCCAFramebufferView { return match }
+        for subview in view.subviews {
+            if let match = findFramebufferView(in: subview) { return match }
+        }
+        return nil
+    }
+
     /// A new cursor from the server. While input is captured the real cursor is
     /// hidden and a copy is drawn, so the copy has to be told.
     func remoteCursorChanged(_ cursor: VNCCursor) {
@@ -171,6 +214,18 @@ final class VNCKeyboardBridge: ObservableObject {
 
         guard let view = NSApp.keyWindow?.firstResponder as? VNCCAFramebufferView,
               let connection = view.connection else { return event }
+
+        // ⌥⌘V types the clipboard into the remote, because it cannot get there
+        // by itself: macOS's VNC server ignores the standard clipboard message
+        // (Apple's own Screen Sharing syncs over a private extension), and that
+        // message carries Latin-1 only. Kept out of the forwarding path — the
+        // remote never receives this one chord — so it still works while input
+        // is captured, which is when the menu bar is out of reach.
+        if event.modifierFlags.contains([.command, .option]),
+           ASCIIKeyboard.character(forKeyCode: event.keyCode, shift: false) == "v" {
+            if event.type == .keyDown { typeClipboard(into: connection) }
+            return nil
+        }
 
         let flags = event.modifierFlags
         let character = ASCIIKeyboard.character(forKeyCode: event.keyCode,

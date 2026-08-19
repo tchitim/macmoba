@@ -146,6 +146,12 @@ struct MacMobaCommands: Commands {
                                  set: { app.vncKeyboard.capturesOnClick = $0 }))
             Button("Release Captured Input") { app.vncKeyboard.release() }
                 .disabled(!app.vncKeyboard.isGrabbed)
+            Button("Paste to Remote Desktop") {
+                if !app.vncKeyboard.typeClipboardIntoFocusedDesktop() {
+                    app.lastError = "No remote desktop in this window."
+                }
+            }
+            .keyboardShortcut("v", modifiers: [.command, .option])
             Button("Copy VNC Diagnostics") {
                 app.copyVNCDiagnostics()
                 app.infoMessage = "VNC diagnostics copied."
