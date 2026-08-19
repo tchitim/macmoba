@@ -22,18 +22,41 @@ public enum RemoteShellMatch {
                                in sessions: [SessionConfig]) -> SessionConfig? {
         let wanted = normalized(host)
         guard !wanted.isEmpty else { return nil }
-        return sessions.first { candidate in
-            candidate.sessionKind == .ssh && normalized(candidate.host) == wanted
-        }
+        let shells = sessions.filter { $0.sessionKind == .ssh && !$0.host.isEmpty }
+        if let exact = shells.first(where: { normalized($0.host) == wanted }) { return exact }
+        // The same machine is often written two ways — `mac-mini.local` in one
+        // session and `mac-mini` in the other — so fall back to the first label.
+        let wantedLabel = firstLabel(wanted)
+        guard !wantedLabel.isEmpty else { return nil }
+        return shells.first { firstLabel(normalized($0.host)) == wantedLabel }
+    }
+
+    /// Every session that could run the command, for a caller that wants to
+    /// resolve addresses when neither the host nor its short name matches.
+    public static func shellSessions(in sessions: [SessionConfig]) -> [SessionConfig] {
+        sessions.filter { $0.sessionKind == .ssh && !$0.host.isEmpty }
     }
 
     private static func normalized(_ host: String) -> String {
         host.trimmingCharacters(in: .whitespaces).lowercased()
     }
 
+    /// The first label of a host name, and nothing for a literal address — the
+    /// first label of `192.168.1.10` is `192`, which would match half a subnet.
+    private static func firstLabel(_ host: String) -> String {
+        guard host.contains(where: { $0.isLetter }) else { return "" }
+        return String(host.prefix { $0 != "." })
+    }
+
     /// Read the clipboard of a remote machine. macOS answers with `pbpaste`;
     /// the X11 tools are tried after it so the same command serves a Linux
     /// desktop, and the whole thing stays quiet when none of them exist.
+    ///
+    /// `LC_ALL` matters: `pbpaste` encodes its output for the current locale,
+    /// and an exec channel carries no TTY and usually no locale at all, so
+    /// anything outside ASCII comes back as question marks — Chinese arrives
+    /// as `????`.
     public static let readClipboardCommand =
-        "pbpaste 2>/dev/null || xclip -o -selection clipboard 2>/dev/null || xsel -b 2>/dev/null"
+        "LC_ALL=en_US.UTF-8 pbpaste 2>/dev/null"
+        + " || xclip -o -selection clipboard 2>/dev/null || xsel -b 2>/dev/null"
 }

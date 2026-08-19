@@ -783,7 +783,12 @@ final class AppState: ObservableObject {
             return
         }
         guard let shell = RemoteShellMatch.session(forHost: desktop.host, in: data.sessions) else {
-            lastError = "No SSH session saved for \(desktop.host), so its clipboard cannot be read."
+            // Name the host that was looked for: the two sessions are usually
+            // written differently, and that is the thing to go and fix.
+            let hosts = RemoteShellMatch.shellSessions(in: data.sessions)
+                .map(\.host).joined(separator: ", ")
+            lastError = "No SSH session with host “\(desktop.host)”."
+                + (hosts.isEmpty ? "" : " SSH sessions point at: \(hosts).")
             return
         }
         do {
