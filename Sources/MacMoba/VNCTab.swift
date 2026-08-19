@@ -190,6 +190,7 @@ extension VNCTab: VNCConnectionDelegate {
                                 didUpdateCursor cursor: VNCCursor) {
         Task { @MainActor in
             self.app?.vncCursorDiagnostics.record(cursor)
+            self.app?.vncKeyboard.remoteCursorChanged(cursor)
             self.container.framebufferView?.connection(connection, didUpdateCursor: cursor)
         }
     }

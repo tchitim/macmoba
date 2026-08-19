@@ -86,6 +86,13 @@ final class VNCKeyboardBridge: ObservableObject {
         }
     }
 
+    /// A new cursor from the server. While input is captured the real cursor is
+    /// hidden and a copy is drawn, so the copy has to be told.
+    func remoteCursorChanged(_ cursor: VNCCursor) {
+        guard let pointer, let image = cursor.cgImage else { return }
+        pointer.updateCursor(image: image, size: cursor.cgSize, hotSpot: cursor.cgHotspot)
+    }
+
     /// Public release, for the menu and for turning capture off. Deliberate, so
     /// it does not come back on its own.
     func release() {
@@ -146,17 +153,24 @@ final class VNCKeyboardBridge: ObservableObject {
     }
 
     private func handleKey(_ event: NSEvent) -> NSEvent? {
-        guard let view = NSApp.keyWindow?.firstResponder as? VNCCAFramebufferView,
-              let connection = view.connection else { return event }
-
-        // Escape stays on the library's key-code path so the remote always
-        // receives it; we only watch the timing.
+        // Escape is checked BEFORE anything else, and without asking who the
+        // first responder is. It is the only way out of a capture — the pointer
+        // is captured too, so the menu bar cannot be reached — and a way out
+        // that depends on other state being right is not a way out. It also
+        // stays on the library's key-code path, so the remote receives every
+        // press; we only watch the timing.
         if event.keyCode == UInt16(kVK_Escape) {
-            if event.type == .keyDown, isGrabbed, escapeGesture.escapePressed(at: event.timestamp) {
-                releaseGrab()
+            if event.type == .keyDown, isGrabbed {
+                let released = event.isARepeat
+                    ? escapeGesture.escapeHeld(at: event.timestamp)
+                    : escapeGesture.escapePressed(at: event.timestamp)
+                if released { releaseGrab() }
             }
             return event
         }
+
+        guard let view = NSApp.keyWindow?.firstResponder as? VNCCAFramebufferView,
+              let connection = view.connection else { return event }
 
         let flags = event.modifierFlags
         let character = ASCIIKeyboard.character(forKeyCode: event.keyCode,

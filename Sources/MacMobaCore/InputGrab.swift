@@ -19,12 +19,19 @@ import Foundation
 
 /// Recognises the double-Escape release gesture.
 public struct DoubleEscapeRelease {
-    /// How close together the two presses must be.
+    /// How close together the two presses must be. Wider than a double-click:
+    /// this is two deliberate taps on a key, not a practised gesture, and a
+    /// release that does not answer leaves no way out — the pointer is captured,
+    /// so the menu bar is unreachable.
     public let window: TimeInterval
+    /// Holding Escape also releases, as a fallback for anyone whose two taps
+    /// keep falling outside the window.
+    public let holdDuration: TimeInterval
     private var previousPress: TimeInterval?
 
-    public init(window: TimeInterval = 0.5) {
+    public init(window: TimeInterval = 0.75, holdDuration: TimeInterval = 1) {
         self.window = window
+        self.holdDuration = holdDuration
     }
 
     /// Feed every Escape press, with a monotonic timestamp (`NSEvent.timestamp`).
@@ -39,6 +46,14 @@ public struct DoubleEscapeRelease {
         }
         previousPress = time
         return false
+    }
+
+    /// Feed the auto-repeat presses that arrive while Escape is held down.
+    /// Returns true once it has been held long enough to count as a release.
+    public mutating func escapeHeld(at time: TimeInterval) -> Bool {
+        guard let previousPress, time - previousPress >= holdDuration else { return false }
+        self.previousPress = nil
+        return true
     }
 
     /// Forget any half-finished gesture — on grab, on release, on losing focus.

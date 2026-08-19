@@ -43,6 +43,31 @@ final class InputGrabTests: XCTestCase {
         XCTAssertTrue(gesture.escapePressed(at: 1.5))
     }
 
+    /// The fallback for taps that keep landing outside the window. Escape's
+    /// auto-repeat is what tells us it is still held.
+    func testHoldingEscapeReleases() {
+        var gesture = DoubleEscapeRelease(window: 0.75, holdDuration: 1)
+        XCTAssertFalse(gesture.escapePressed(at: 10.0))
+        XCTAssertFalse(gesture.escapeHeld(at: 10.4), "not held long enough yet")
+        XCTAssertTrue(gesture.escapeHeld(at: 11.0))
+        XCTAssertFalse(gesture.escapeHeld(at: 11.5), "and only once")
+    }
+
+    /// A tap produces no repeats, so it must not look like a hold.
+    func testRepeatsWithoutAPressDoNothing() {
+        var gesture = DoubleEscapeRelease(window: 0.75, holdDuration: 1)
+        XCTAssertFalse(gesture.escapeHeld(at: 10.0))
+        XCTAssertFalse(gesture.escapeHeld(at: 99.0))
+    }
+
+    /// Two deliberate taps are slower than a double-click; the default has to
+    /// answer them, because a release that does not is a trapped user.
+    func testTheDefaultWindowAnswersDeliberateTaps() {
+        var gesture = DoubleEscapeRelease()
+        XCTAssertFalse(gesture.escapePressed(at: 10.0))
+        XCTAssertTrue(gesture.escapePressed(at: 10.7))
+    }
+
     func testResetForgetsAHalfFinishedGesture() {
         var gesture = DoubleEscapeRelease(window: 0.5)
         XCTAssertFalse(gesture.escapePressed(at: 10.0))

@@ -27,6 +27,7 @@ final class RemotePointerSession {
     private weak var view: VNCCAFramebufferView?
     private var pointer: RelativePointer
     private let cursorLayer = RemoteCursorView()
+    private var hotSpot: CGPoint = .zero
     private var restoreMouseMoved: Bool?
 
     /// - Parameter viewPoint: where the grabbing click landed, in the
@@ -50,6 +51,11 @@ final class RemotePointerSession {
         CGAssociateMouseAndMouseCursorPosition(0)
         NSCursor.hide()
         view.addSubview(cursorLayer)
+        // Whatever the view has now, so the pointer is visible before the
+        // server's next cursor update arrives.
+        let current = view.currentCursor
+        hotSpot = current.hotSpot
+        cursorLayer.image = current.image
         redrawCursor()
     }
 
@@ -119,21 +125,26 @@ final class RemotePointerSession {
 
     // MARK: - drawing the remote cursor
 
+    /// Take a new cursor as it arrives from the server. Pushed rather than read
+    /// off the view on each move: the shape changes when the REMOTE decides it
+    /// does — hovering a text field, resizing a window — which is not the same
+    /// moments as the mouse moving here, and reading it late is how the drawn
+    /// copy ended up frozen on whichever shape happened to be current when the
+    /// capture began.
+    func updateCursor(image: CGImage, size: CGSize, hotSpot: CGPoint) {
+        cursorLayer.image = NSImage(cgImage: image, size: size)
+        self.hotSpot = hotSpot
+        redrawCursor()
+    }
+
     private func redrawCursor() {
         guard let view else { return }
-        let cursor = view.currentCursor
-        let image = cursor.image
-        // A cursor image can be Retina: more pixels than points. Its `size` is
-        // the size to DRAW it at, and the view scales the representation to
-        // fit — drawing it unscaled put the pixels at point size instead, so
-        // all that fitted in the frame was a sliver of the arrow.
-        let size = image.size.width > 0 && image.size.height > 0 ? image.size : CGSize(width: 16, height: 16)
-        if cursorLayer.image !== image { cursorLayer.image = image }
+        let size = cursorLayer.image?.size ?? CGSize(width: 16, height: 16)
         let point = Self.viewPoint(of: pointer.position, in: view)
-        // `hotSpot` is measured from the image's top-left; a view's origin is
+        // A hot spot is measured from the image's top-left; a view's origin is
         // its bottom-left.
-        cursorLayer.frame = CGRect(x: point.x - cursor.hotSpot.x,
-                                   y: point.y - (size.height - cursor.hotSpot.y),
+        cursorLayer.frame = CGRect(x: point.x - hotSpot.x,
+                                   y: point.y - (size.height - hotSpot.y),
                                    width: size.width, height: size.height)
     }
 
