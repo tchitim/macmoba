@@ -45,6 +45,10 @@ final class VNCKeyboardBridge: ObservableObject {
     private var pointer: RemotePointerSession?
     /// A capture that focus loss interrupted, waiting to be picked back up.
     private weak var suspended: VNCCAFramebufferView?
+    /// What the last paste-by-typing did, for the diagnostics report: telling
+    /// "never triggered" from "sent, and the remote ignored it" is otherwise
+    /// guesswork.
+    private(set) var lastTypedKeyCount: Int?
     private var previousHotKeyMode: UnsafeMutableRawPointer?
     private var escapeGesture = DoubleEscapeRelease()
     private var observers: [NSObjectProtocol] = []
@@ -95,6 +99,7 @@ final class VNCKeyboardBridge: ObservableObject {
     func typeClipboard(into connection: VNCConnection) {
         guard let text = NSPasteboard.general.string(forType: .string) else { return }
         let keysyms = RemoteTyping.keysyms(for: text)
+        lastTypedKeyCount = keysyms.count
         guard !keysyms.isEmpty else { return }
         Task {
             for keysym in keysyms {
@@ -164,6 +169,10 @@ final class VNCKeyboardBridge: ObservableObject {
               let window = event.window,
               let view = window.contentView?.hitTest(event.locationInWindow) as? VNCCAFramebufferView
         else { return event }
+        // The library takes focus in its own mouseDown, which we are about to
+        // swallow — so clicking back into a remote desktop after using the
+        // sidebar would leave the keyboard pointing at nothing.
+        window.makeFirstResponder(view)
         grab(view, at: view.convert(event.locationInWindow, from: nil))
         // The click that captured input is also a click on the remote desktop.
         // Once the pointer is decoupled the library can no longer read it off
@@ -212,20 +221,23 @@ final class VNCKeyboardBridge: ObservableObject {
             return event
         }
 
-        guard let view = NSApp.keyWindow?.firstResponder as? VNCCAFramebufferView,
-              let connection = view.connection else { return event }
-
         // ⌥⌘V types the clipboard into the remote, because it cannot get there
         // by itself: macOS's VNC server ignores the standard clipboard message
         // (Apple's own Screen Sharing syncs over a private extension), and that
         // message carries Latin-1 only. Kept out of the forwarding path — the
         // remote never receives this one chord — so it still works while input
-        // is captured, which is when the menu bar is out of reach.
+        // is captured, which is when the menu bar is out of reach. Checked
+        // before the focus guard below, and against the whole window: a paste
+        // that only works when focus happens to be right is not much of one.
         if event.modifierFlags.contains([.command, .option]),
-           ASCIIKeyboard.character(forKeyCode: event.keyCode, shift: false) == "v" {
-            if event.type == .keyDown { typeClipboard(into: connection) }
+           ASCIIKeyboard.character(forKeyCode: event.keyCode, shift: false) == "v",
+           let desktop = focusedFramebufferView, let target = desktop.connection {
+            if event.type == .keyDown { typeClipboard(into: target) }
             return nil
         }
+
+        guard let view = NSApp.keyWindow?.firstResponder as? VNCCAFramebufferView,
+              let connection = view.connection else { return event }
 
         let flags = event.modifierFlags
         let character = ASCIIKeyboard.character(forKeyCode: event.keyCode,

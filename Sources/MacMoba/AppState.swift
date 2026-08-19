@@ -303,7 +303,10 @@ final class AppState: ObservableObject {
 
     /// One report covering both VNC puzzles, for pasting into a bug report.
     func copyVNCDiagnostics() {
-        let text = vncCursorDiagnostics.report + "\n\nclipboard\n" + vncLogger.report
+        let typed = vncKeyboard.lastTypedKeyCount.map(String.init) ?? "never used"
+        let text = vncCursorDiagnostics.report
+            + "\n\nclipboard\n" + vncLogger.report
+            + "\nkeys sent by last Paste to Remote (⌥⌘V): \(typed)"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
