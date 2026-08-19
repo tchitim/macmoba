@@ -152,11 +152,18 @@ final class VNCKeyboardBridge: ObservableObject {
         return true
     }
 
+    /// The remote desktop to act on. Focus first, then the windows themselves —
+    /// `keyWindow` is nil while a menu is still closing, which is exactly when
+    /// a menu item runs, and there can be more than one window anyway. Looking
+    /// only there reported "no remote desktop" with one plainly on screen.
     private var focusedFramebufferView: VNCCAFramebufferView? {
         if let view = NSApp.keyWindow?.firstResponder as? VNCCAFramebufferView { return view }
-        // Falls back to searching the key window, so the menu item works even
-        // when focus sits somewhere else in the window.
-        return NSApp.keyWindow?.contentView.flatMap(Self.findFramebufferView)
+        var searched: [NSWindow] = [NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 }
+        searched.append(contentsOf: NSApp.windows.filter { $0.isVisible })
+        for window in searched {
+            if let view = window.contentView.flatMap(Self.findFramebufferView) { return view }
+        }
+        return nil
     }
 
     private static func findFramebufferView(in view: NSView) -> VNCCAFramebufferView? {
