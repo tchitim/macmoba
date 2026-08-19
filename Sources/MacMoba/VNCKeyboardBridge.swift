@@ -54,6 +54,9 @@ final class VNCKeyboardBridge: ObservableObject {
     /// causes — the event never arriving, and the test for it not matching —
     /// and from outside they look identical.
     private(set) var lastChordSeen: String?
+    /// Fetches the remote machine's clipboard over its own shell session. Set
+    /// by AppState, which is the only thing that knows about sessions.
+    var copyFromRemote: (() -> Void)?
     private var previousHotKeyMode: UnsafeMutableRawPointer?
     /// The one release gesture. Escape twice was offered too and taken back
     /// out: both presses are forwarded on purpose, so any remote that reads
@@ -288,6 +291,8 @@ final class VNCKeyboardBridge: ObservableObject {
         // is captured, which is when the menu bar is out of reach. Checked
         // before the focus guard below, and against the whole window: a paste
         // that only works when focus happens to be right is not much of one.
+        // ⌥⌘C is the other direction, which cannot go through VNC at all and
+        // travels over the machine's own shell session instead.
         if event.type == .keyDown, event.modifierFlags.contains(.command)
             || event.modifierFlags.contains(.option) {
             let translated = ASCIIKeyboard.character(forKeyCode: event.keyCode, shift: false)
@@ -298,9 +303,16 @@ final class VNCKeyboardBridge: ObservableObject {
         }
 
         if event.modifierFlags.contains([.command, .option]),
-           ASCIIKeyboard.character(forKeyCode: event.keyCode, shift: false) == "v",
+           let letter = ASCIIKeyboard.character(forKeyCode: event.keyCode, shift: false),
+           letter == "v" || letter == "c",
            let desktop = focusedFramebufferView, let target = desktop.connection {
-            if event.type == .keyDown { typeClipboard(into: target) }
+            if event.type == .keyDown {
+                if letter == "v" {
+                    typeClipboard(into: target)
+                } else {
+                    copyFromRemote?()
+                }
+            }
             return nil
         }
 

@@ -340,6 +340,9 @@ final class AppState: ObservableObject {
         startAppearanceObserver()
         startControlServer()
         vncKeyboard.install()
+        vncKeyboard.copyFromRemote = { [weak self] in
+            Task { await self?.copyClipboardFromRemoteDesktop() }
+        }
         healthMonitor.jumpProbe = { [weak self] session in
             guard let self else { return .down(reason: "quitting") }
             return await self.probeViaJumpChain(session)
@@ -770,6 +773,37 @@ final class AppState: ObservableObject {
     /// Fetch a one-shot resource snapshot (load/CPU/RAM/uptime) for an SSH
     /// session by running a throwaway command over its own connection — the same
     /// jump chain, credentials and host-key checks a real connect uses.
+    /// Put the remote machine's clipboard on this Mac's. A desktop session
+    /// cannot supply it — macOS's VNC server never sends one — so the same
+    /// machine's shell session is asked instead.
+    func copyClipboardFromRemoteDesktop() async {
+        let desktops = windows.compactMap { $0.selectedTab?.vnc?.config }
+        guard let desktop = desktops.first else {
+            lastError = "No remote desktop in front."
+            return
+        }
+        guard let shell = RemoteShellMatch.session(forHost: desktop.host, in: data.sessions) else {
+            lastError = "No SSH session saved for \(desktop.host), so its clipboard cannot be read."
+            return
+        }
+        do {
+            let resolved = try await SecretResolver.resolve(session: shell)
+            let chain = try await SecretResolver.resolve(sessions: jumpChain(for: shell))
+            let text = try await SSHConnection.runCommand(
+                RemoteShellMatch.readClipboardCommand, config: resolved,
+                hostKeys: hostKeyVerification, jumps: chain)
+            guard !text.isEmpty else {
+                infoMessage = "The remote clipboard is empty."
+                return
+            }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            infoMessage = "Copied \(text.count) characters from \(shell.name)."
+        } catch {
+            lastError = "Could not read the remote clipboard: \(error.localizedDescription)"
+        }
+    }
+
     func remoteStats(for session: SessionConfig) async throws -> RemoteStats {
         let resolved = try await SecretResolver.resolve(session: session)
         let chain = jumpChain(for: session)

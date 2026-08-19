@@ -152,6 +152,10 @@ struct MacMobaCommands: Commands {
                 }
             }
             .keyboardShortcut("v", modifiers: [.command, .option])
+            Button("Copy from Remote Desktop") {
+                Task { await app.copyClipboardFromRemoteDesktop() }
+            }
+            .keyboardShortcut("c", modifiers: [.command, .option])
             Button("Copy VNC Diagnostics") {
                 app.copyVNCDiagnostics()
                 app.infoMessage = "VNC diagnostics copied."

@@ -1,6 +1,7 @@
 # MacMoba 專案狀態
 
-最後更新：2026-08-19 · 版本 **v1.90** · 測試 **730 項全過**
+最後更新：2026-08-19 · 版本 **v1.91** · 測試 **735 項全過**
+（**遠端→本機剪貼簿:繞過 VNC,走同一台機器的 SSH**。診斷已經證實 macOS 的 VNC 伺服器**一次都沒送過** `ServerCutText`（`received from server: 0`,`recent lines` 裡沒有任何 `Receiving Clipboard Text`）,而協定也沒有「去問遠端選取內容」這種訊息——所以這個方向在 VNC 裡是死路。**但那台機器通常另有一條路**:會在某台機器上開遠端桌面的人,幾乎都在同一台機器上有 shell。`RemoteShellMatch`（5 測試）**依 host 比對**挑出保險箱裡指向同一台機器的 SSH 連線（不是依名稱——桌面連線與 shell 連線描述同一台機器,卻幾乎不會同名;且只有能跑指令的種類才算候選,VNC／web／serial 一律排除）,再用既有的 `SSHConnection.runCommand` 跑 `pbpaste`（Linux 退回 `xclip`／`xsel`）,結果寫進本機剪貼簿。入口 **⌥⌘C**,與 ⌥⌘V 一樣**保留不轉發**,所以擷取輸入時照樣可用）
 （**使用者實機驗收通過（2026-08-19, v1.90）**:MBA→Mac mini 中英文皆可貼上。 **⌥⌘V 有送出按鍵卻打不出字:修飾鍵還壓著**。診斷把它釘死了——`last ⌘/⌥ chord seen by the monitor: keyCode 9 → "v" · command true option true · desktop found true` 加上 `keys sent: 9`,證明快捷鍵確實觸發、也確實送出 9 個鍵;但使用者截圖顯示遠端「跳到別的地方、一個字也沒有」。原因:按 ⌥⌘V 的當下 ⌘⌥ 是**實體按下**的,RoyalVNC 已透過 `flagsChanged` 把「Command 按下」送給遠端,我們吞掉的只有 V 那一下——於是逐字送出的 `h e l l o` 在遠端變成 **⌘H ⌘E ⌘L**,一連串選單快捷鍵。修法:打字前先對遠端送出所有修飾鍵的 keyUp（左右兩側都送）,使用者放手時實體事件自然會再同步回來。**這份診斷還意外證實了 1.85 的必要性**:報告是從選單觸發的,而它抓到 `key window: none · app active: false`——選單追蹤期間真的沒有 key window,所以先前只查 `keyWindow` 的寫法必然失敗）
 （**VNC 輸入這條線全部驗收通過（2026-08-19, v1.88）**:⌃⌥ 解除、Esc 完全交給遠端（cmux 裡的 Claude Code 照常用 Esc Esc）、切分頁後點擊／打字／瀏覽器複製都正常、⌥⌘V 中文貼上正常。**清掉兩處過時註解**——刪掉 Escape 分支時把它的說明留在原地,底下卻是不相干的程式碼,那是最會誤導人的一種註解）
 （**Esc Esc 選項整個移除**（使用者要求）:只剩 ⌃⌥ 一種解除手勢。連帶刪掉 `DoubleEscapeRelease` 與它的 6 個測試（沒有使用者的程式碼留著只會誤導後來的人）、選單開關、以及 `handleKey` 裡的 Escape 特例分支——**Escape 現在完全不被攔截**,原樣走 RoyalVNC 的 keycode 路徑送給遠端。**踩到一個自己造成的坑**:刪除區塊時把夾在中間的 `RelativePointer` 一起切掉了,編譯即刻報錯、補回;測試數 739→730 是移除那 6 個 Escape 手勢測試加上重算的結果）
