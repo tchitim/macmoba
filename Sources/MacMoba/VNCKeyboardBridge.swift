@@ -50,21 +50,14 @@ final class VNCKeyboardBridge: ObservableObject {
     /// guesswork.
     private(set) var lastTypedKeyCount: Int?
     private var previousHotKeyMode: UnsafeMutableRawPointer?
-    private var escapeGesture = DoubleEscapeRelease()
+    /// The one release gesture. Escape twice was offered too and taken back
+    /// out: both presses are forwarded on purpose, so any remote that reads
+    /// Escape twice as a shortcut of its own — Claude Code goes back a message
+    /// — fires along with the release. ⌃⌥ cannot collide with anything,
+    /// because holding modifiers and pressing nothing means nothing.
     private var chordGesture = ModifierChordRelease()
-    /// Which gesture lets go of the keyboard. ⌃⌥ by default because Escape
-    /// twice, while easier to remember, is also a gesture the REMOTE may want:
-    /// Claude Code reads it as "go back a message", and both presses are
-    /// forwarded on purpose so Escape keeps working over there.
-    @Published var releasesWithEscape: Bool =
-        UserDefaults.standard.bool(forKey: "vncReleasesWithEscape") {
-        didSet { UserDefaults.standard.set(releasesWithEscape, forKey: "vncReleasesWithEscape") }
-    }
 
-    /// What to tell the user on screen, so the hint always matches the setting.
-    var releaseHint: String {
-        releasesWithEscape ? "press Esc twice to release" : "press ⌃⌥ to release"
-    }
+    let releaseHint = "press ⌃⌥ to release"
     private var observers: [NSObjectProtocol] = []
 
     func install() {
@@ -119,7 +112,7 @@ final class VNCKeyboardBridge: ObservableObject {
         remote desktop found in window: \(focusedFramebufferView != nil)
         event monitor installed: \(monitor != nil)
         capture on click: \(capturesOnClick) · captured now: \(isGrabbed)
-        release gesture: \(releasesWithEscape ? "Esc Esc" : "Control-Option")
+        release gesture: Control-Option
         """
     }
 
@@ -214,7 +207,7 @@ final class VNCKeyboardBridge: ObservableObject {
         let flags = event.modifierFlags
         let held = flags.contains(.control) && flags.contains(.option)
             && !flags.contains(.command) && !flags.contains(.shift)
-        if chordGesture.modifiersChanged(held: held), isGrabbed, !releasesWithEscape {
+        if chordGesture.modifiersChanged(held: held), isGrabbed {
             releaseGrab()
         }
         return event
@@ -275,15 +268,6 @@ final class VNCKeyboardBridge: ObservableObject {
         // letter is a shortcut, and the remote should get it.
         if event.type == .keyDown { chordGesture.otherKeyPressed() }
 
-        if event.keyCode == UInt16(kVK_Escape) {
-            if event.type == .keyDown, isGrabbed, releasesWithEscape {
-                let released = event.isARepeat
-                    ? escapeGesture.escapeHeld(at: event.timestamp)
-                    : escapeGesture.escapePressed(at: event.timestamp)
-                if released { releaseGrab() }
-            }
-            return event
-        }
 
         // ⌥⌘V types the clipboard into the remote, because it cannot get there
         // by itself: macOS's VNC server ignores the standard clipboard message
@@ -346,7 +330,6 @@ final class VNCKeyboardBridge: ObservableObject {
 
     private func grab(_ view: VNCCAFramebufferView, at viewPoint: CGPoint) {
         grabbedView = view
-        escapeGesture.reset()
         chordGesture.reset()
         isGrabbed = true
         pointer = RemotePointerSession(view: view, startingAt: viewPoint)
@@ -402,7 +385,7 @@ final class VNCKeyboardBridge: ObservableObject {
             self.previousHotKeyMode = nil
         }
         grabbedView = nil
-        escapeGesture.reset()
+        chordGesture.reset()
         isGrabbed = false
     }
 

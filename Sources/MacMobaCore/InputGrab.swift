@@ -6,61 +6,14 @@
 // makes the release gesture safety equipment, so it has to be something you
 // cannot press by accident and cannot fail to press when you need it.
 //
-// Escape twice is what was chosen. The subtlety is that Escape still has to
-// work on the remote (vim, cancelling a composition, leaving full screen), so
-// every press is forwarded as it happens and the second one merely also
-// releases the grab. The remote therefore sees two Escapes when you let go,
-// which is harmless, and never loses a single one — the alternative, holding
-// the first Escape back to see whether a second arrives, would put a delay on
-// every Escape you type.
+// Escape twice was tried first and withdrawn. Escape has to keep working on
+// the remote — vim, cancelling a composition, leaving full screen — so both
+// presses were forwarded, and any remote that reads Escape twice as its own
+// shortcut fired along with the release. Claude Code, running on the remote,
+// does exactly that.
 
 import CoreGraphics
 import Foundation
-
-/// Recognises the double-Escape release gesture.
-public struct DoubleEscapeRelease {
-    /// How close together the two presses must be. Wider than a double-click:
-    /// this is two deliberate taps on a key, not a practised gesture, and a
-    /// release that does not answer leaves no way out — the pointer is captured,
-    /// so the menu bar is unreachable.
-    public let window: TimeInterval
-    /// Holding Escape also releases, as a fallback for anyone whose two taps
-    /// keep falling outside the window.
-    public let holdDuration: TimeInterval
-    private var previousPress: TimeInterval?
-
-    public init(window: TimeInterval = 0.75, holdDuration: TimeInterval = 1) {
-        self.window = window
-        self.holdDuration = holdDuration
-    }
-
-    /// Feed every Escape press, with a monotonic timestamp (`NSEvent.timestamp`).
-    /// Returns true when this press completes the gesture.
-    ///
-    /// Completing it clears the state, so a run of Escapes releases once rather
-    /// than on every press after the first.
-    public mutating func escapePressed(at time: TimeInterval) -> Bool {
-        if let previousPress, time - previousPress <= window {
-            self.previousPress = nil
-            return true
-        }
-        previousPress = time
-        return false
-    }
-
-    /// Feed the auto-repeat presses that arrive while Escape is held down.
-    /// Returns true once it has been held long enough to count as a release.
-    public mutating func escapeHeld(at time: TimeInterval) -> Bool {
-        guard let previousPress, time - previousPress >= holdDuration else { return false }
-        self.previousPress = nil
-        return true
-    }
-
-    /// Forget any half-finished gesture — on grab, on release, on losing focus.
-    public mutating func reset() {
-        previousPress = nil
-    }
-}
 
 /// Where the remote pointer is, driven by hardware deltas rather than by the
 /// local cursor's position — the pointer is decoupled from the display while

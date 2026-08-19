@@ -144,11 +144,6 @@ struct MacMobaCommands: Commands {
             Toggle("Capture Input on Click",
                    isOn: Binding(get: { app.vncKeyboard.capturesOnClick },
                                  set: { app.vncKeyboard.capturesOnClick = $0 }))
-            // ⌃⌥ by default: Escape twice is something the remote may want for
-            // itself (Claude Code reads it as "go back a message").
-            Toggle("Release Capture with Esc Esc (instead of ⌃⌥)",
-                   isOn: Binding(get: { app.vncKeyboard.releasesWithEscape },
-                                 set: { app.vncKeyboard.releasesWithEscape = $0 }))
             Button("Release Captured Input") { app.vncKeyboard.release() }
                 .disabled(!app.vncKeyboard.isGrabbed)
             Button("Paste to Remote Desktop") {
