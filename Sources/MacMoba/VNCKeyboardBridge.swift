@@ -12,7 +12,7 @@
 // CAPTURE. Clicking into a remote desktop hands it the keyboard and pins the
 // pointer inside it, the way VMware and Parallels do — including the keys this
 // Mac would otherwise keep for itself, which is what lets you switch the
-// REMOTE input source with ⌃Space. Press Escape twice to let go.
+// REMOTE input source with ⌃Space. Press ⌃⌥ and let go to hand it back.
 //
 // Both live on one local event monitor because it runs before the event
 // reaches the window: that is what lets us forward a key AND keep the local
@@ -258,14 +258,10 @@ final class VNCKeyboardBridge: ObservableObject {
     }
 
     private func handleKey(_ event: NSEvent) -> NSEvent? {
-        // Escape is checked BEFORE anything else, and without asking who the
-        // first responder is. It is the only way out of a capture — the pointer
-        // is captured too, so the menu bar cannot be reached — and a way out
-        // that depends on other state being right is not a way out. It also
-        // stays on the library's key-code path, so the remote receives every
-        // press; we only watch the timing.
         // Any key cancels a half-made ⌃⌥ gesture: that combination plus a
-        // letter is a shortcut, and the remote should get it.
+        // letter is a shortcut, and the remote should get it. Escape itself is
+        // not touched anywhere here — it travels to the remote by key code like
+        // any other, which is the point of releasing with ⌃⌥ instead.
         if event.type == .keyDown { chordGesture.otherKeyPressed() }
 
 
