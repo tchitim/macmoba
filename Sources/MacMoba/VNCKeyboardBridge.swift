@@ -191,6 +191,13 @@ final class VNCKeyboardBridge: ObservableObject {
     // MARK: - the monitor
 
     private func handle(_ event: NSEvent) -> NSEvent? {
+        // A capture outlives its desktop if the user switches tabs: SwiftUI
+        // takes the view out of the window, nothing here notices, and every
+        // click in the app keeps being swallowed on behalf of a remote desktop
+        // that is no longer on screen — which is how copying from a web tab
+        // stopped working.
+        if isGrabbed, grabbedView?.window == nil { releaseGrab() }
+
         switch event.type {
         case .keyDown, .keyUp: return handleKey(event)
         case .leftMouseDown, .rightMouseDown, .otherMouseDown: return handleMouseDown(event)
