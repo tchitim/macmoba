@@ -59,6 +59,12 @@ struct SettingsView: View {
                         Text(theme.name).tag(theme.id)
                     }
                 }
+                // Said out loud because its absence reads as a bug: pick a
+                // theme while looking at a remote desktop and nothing happens.
+                Text("Colours the terminal. Remote desktops and web pages keep their own; "
+                     + "the sidebar and window follow the system.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 HStack {
                     Text("Font size")
                     Spacer()
