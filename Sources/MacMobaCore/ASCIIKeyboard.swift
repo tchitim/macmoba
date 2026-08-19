@@ -63,17 +63,27 @@ public enum RemoteKeyPolicy {
     /// True when `character` is an ordinary typed character that should be
     /// forwarded as the physical key.
     ///
-    /// Modifier combinations are left alone: ⌘/⌃/⌥ chords are the remote
-    /// desktop's shortcut path, and `function` covers the arrows, F-keys and
-    /// friends, which travel by key code and are already input-source blind.
-    /// Anything unprintable (Return, Escape, Tab) likewise has its own key
-    /// code, so there is nothing to gain by rewriting it here.
+    /// `function` covers the arrows, F-keys and friends, which travel by key
+    /// code and are already input-source blind. Anything unprintable (Return,
+    /// Escape, Tab) likewise has its own key code, so there is nothing to gain
+    /// by rewriting it here — and Escape in particular must stay on that path,
+    /// because it is also the release gesture.
+    ///
+    /// Modifier chords are only taken over once input is `grabbed`. Off the
+    /// grab they belong to this Mac: swallowing them would eat MacMoba's own
+    /// menu key equivalents. Under it they belong to the remote, which is what
+    /// capturing input means — and routing them here fixes them for the same
+    /// reason plain typing needed fixing.
     public static func sendsPhysicalKey(command: Bool,
                                         control: Bool,
                                         option: Bool,
                                         function: Bool,
-                                        character: String?) -> Bool {
-        guard !command, !control, !option, !function else { return false }
+                                        character: String?,
+                                        grabbed: Bool = false) -> Bool {
+        guard !function else { return false }
+        if !grabbed {
+            guard !command, !control, !option else { return false }
+        }
         guard let character, character.count == 1,
               let scalar = character.unicodeScalars.first else { return false }
         // Printable ASCII only. A non-ASCII result would mean the lookup found

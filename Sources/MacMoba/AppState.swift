@@ -291,8 +291,9 @@ final class AppState: ObservableObject {
     /// to reach it without going through a window.
     let healthMonitor = HealthMonitor()
     /// Forwards physical keys to a focused remote desktop, so the input method
-    /// selected on THIS Mac cannot decide what the remote one receives.
-    private let vncKeyboard = VNCKeyboardBridge()
+    /// selected on THIS Mac cannot decide what the remote one receives, and
+    /// owns the click-to-capture grab.
+    let vncKeyboard = VNCKeyboardBridge()
     /// Kept as the concrete type as well: `HostKeyVerification.store` is the
     /// protocol, which deliberately only knows how to look up and pin. Review
     /// and revocation need the store itself.

@@ -137,6 +137,16 @@ struct MacMobaCommands: Commands {
             Toggle("Broadcast Input (MultiExec)", isOn: $app.broadcastInput)
                 .keyboardShortcut("b", modifiers: [.command, .shift])
             Divider()
+            // Capturing input takes this Mac's own shortcuts away, so the way
+            // out is documented where the behaviour is turned on.
+            // Hand-made binding: the bridge is its own observable object, so
+            // there is no $app projection reaching into it.
+            Toggle("Capture Input on Click (Esc Esc to release)",
+                   isOn: Binding(get: { app.vncKeyboard.capturesOnClick },
+                                 set: { app.vncKeyboard.capturesOnClick = $0 }))
+            Button("Release Captured Input") { app.vncKeyboard.release() }
+                .disabled(!app.vncKeyboard.isGrabbed)
+            Divider()
             Button(window?.selectedTab?.focusedPane?.logURL == nil
                    ? "Start Session Log" : "Stop Session Log") {
                 window?.toggleSessionLog()

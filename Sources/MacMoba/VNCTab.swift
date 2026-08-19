@@ -240,11 +240,13 @@ struct VNCHostView: NSViewRepresentable {
 /// connecting or after it has dropped.
 struct VNCPaneView: View {
     @ObservedObject var tab: VNCTab
+    @EnvironmentObject var app: AppState
 
     var body: some View {
         VNCHostView(tab: tab)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
+            .overlay(alignment: .top) { CaptureHint(bridge: app.vncKeyboard) }
             .overlay {
                 if tab.state != .connected {
                     VStack(spacing: 10) {
@@ -269,5 +271,38 @@ struct VNCPaneView: View {
                     .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 10))
                 }
             }
+    }
+}
+
+/// Says how to get the keyboard back. Capturing input takes ⌘Tab and the rest
+/// of this Mac's shortcuts away from it, so the way out has to be on screen —
+/// it fades once you have seen it, and comes back whenever input is captured
+/// again.
+private struct CaptureHint: View {
+    @ObservedObject var bridge: VNCKeyboardBridge
+    @State private var showing = false
+
+    var body: some View {
+        Group {
+            if showing {
+                Label("Input captured — press Esc twice to release",
+                      systemImage: "lock.fill")
+                    .font(.callout)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(.black.opacity(0.7), in: Capsule())
+                    .padding(.top, 10)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: showing)
+        .onChange(of: bridge.isGrabbed) { grabbed in
+            guard grabbed else { return showing = false }
+            showing = true
+            Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if bridge.isGrabbed { showing = false }
+            }
+        }
     }
 }
