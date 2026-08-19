@@ -307,6 +307,7 @@ final class AppState: ObservableObject {
         let text = vncCursorDiagnostics.report
             + "\n\nclipboard\n" + vncLogger.report
             + "\nkeys sent by last Paste to Remote (⌥⌘V): \(typed)"
+            + "\n\nkeyboard focus\n" + vncKeyboard.focusReport
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }

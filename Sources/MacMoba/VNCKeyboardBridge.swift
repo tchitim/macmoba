@@ -104,6 +104,25 @@ final class VNCKeyboardBridge: ObservableObject {
         }
     }
 
+    /// Where the keyboard is actually pointing. Every key we handle depends on
+    /// a remote desktop being the first responder, so when "nothing happens"
+    /// this is the first thing worth knowing — and it cannot be seen from
+    /// outside the app.
+    var focusReport: String {
+        let responder = NSApp.keyWindow?.firstResponder
+        let name = responder.map { String(describing: type(of: $0)) } ?? "none"
+        return """
+        key window: \(NSApp.keyWindow == nil ? "none" : "yes")
+        app active: \(NSApp.isActive)
+        first responder: \(name)
+        remote desktop is first responder: \(responder is VNCCAFramebufferView)
+        remote desktop found in window: \(focusedFramebufferView != nil)
+        event monitor installed: \(monitor != nil)
+        capture on click: \(capturesOnClick) · captured now: \(isGrabbed)
+        release gesture: \(releasesWithEscape ? "Esc Esc" : "Control-Option")
+        """
+    }
+
     /// Type what is on the clipboard into the focused remote desktop.
     ///
     /// Paced deliberately: a remote Mac processes synthesised keys through the
