@@ -42,12 +42,28 @@ struct TerminalTheme: Identifiable, Equatable {
         }
     }
 
+    /// Restyle a live terminal without touching its scrollback.
+    ///
+    /// Order and the layer fill both matter. SwiftTerm's macOS draw path
+    /// clears the dirty rect to *transparent* and fills only cells that carry
+    /// an explicit background — default-background cells show the view layer's
+    /// colour through the backing store. Setting `nativeBackgroundColor` alone
+    /// updates the engine's notion of the default but leaves that layer on the
+    /// old theme, so those cells keep the previous background. And
+    /// `installColors` is what drops the cached attribute runs, so it has to
+    /// run last: anything set after it would not reach the cache it just
+    /// rebuilt. The explicit full-bounds invalidation is the belt to that
+    /// brace — a partial repaint would leave the untouched region on the old
+    /// palette.
     func apply(to view: TerminalView) {
-        view.installColors(swiftTermColors)
-        view.nativeBackgroundColor = Self.nsColor(background)
+        let bg = Self.nsColor(background)
         view.nativeForegroundColor = Self.nsColor(foreground)
+        view.nativeBackgroundColor = bg
         view.caretColor = Self.nsColor(cursor)
-        view.needsDisplay = true
+        view.installColors(swiftTermColors)
+        view.wantsLayer = true
+        view.layer?.backgroundColor = bg.cgColor
+        view.setNeedsDisplay(view.bounds)
     }
 
     var backgroundColor: NSColor { Self.nsColor(background) }

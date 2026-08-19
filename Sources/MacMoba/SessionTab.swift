@@ -249,12 +249,37 @@ final class SessionTab: ObservableObject, Identifiable {
     /// out on screen yet (a background tab in a window that was never shown).
     func snapshot() -> NSImage? {
         guard let view = snapshotView, view.window != nil,
-              view.bounds.width > 1, view.bounds.height > 1,
-              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+              view.bounds.width > 1, view.bounds.height > 1 else { return nil }
+        // A remote desktop hands us a finished frame and assigns it straight to
+        // `layer.contents`; it has no `draw(_:)` for `cacheDisplay` to replay,
+        // so that path yields an empty card. The frame we want IS that image.
+        if vnc != nil || rdp != nil, let framebuffer = framebufferImage(in: view) {
+            return framebuffer
+        }
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
         view.cacheDisplay(in: view.bounds, to: rep)
         let image = NSImage(size: view.bounds.size)
         image.addRepresentation(rep)
         return image
+    }
+
+    /// The displayed frame of a layer-hosted remote desktop, found by walking
+    /// down to whichever layer actually carries a CGImage — the framebuffer
+    /// view is a child of the container, and it is the child that holds it.
+    private func framebufferImage(in view: NSView) -> NSImage? {
+        var pending: [CALayer] = view.layer.map { [$0] } ?? []
+        while let layer = pending.popLast() {
+            // `as? CGImage` always succeeds on a CF type, so ask the runtime.
+            if let contents = layer.contents,
+               CFGetTypeID(contents as CFTypeRef) == CGImage.typeID {
+                let frame = contents as! CGImage
+                // Sized to the view, not the frame: the remote desktop may be a
+                // different resolution, and the card wants what is on screen.
+                return NSImage(cgImage: frame, size: view.bounds.size)
+            }
+            pending.append(contentsOf: layer.sublayers ?? [])
+        }
+        return nil
     }
 
     var aggregateState: TerminalTab.State {
