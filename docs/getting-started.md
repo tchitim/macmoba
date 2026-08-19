@@ -153,3 +153,4 @@ MacMoba 使用 [Sparkle](https://sparkle-project.org/)：預設每天檢查一�
 - **不支援 ssh-agent 與 keyboard-interactive（2FA/OTP）**：上游函式庫尚未提供
 - **X11 轉發**需另外安裝 XQuartz，並開啟 TCP 監聽
 - **Session log 是明文**：畫面上出現的機密都會寫進去（檔案 0600）
+- **VNC 游標形狀不跟著遠端變**：連到 macOS Screen Sharing 時，遠端游標永遠顯示為箭頭，滑過文字框不會變成 I 字形。伺服器持續送游標更新，但送的一直是同一顆——這是伺服器端行為，擷取輸入與否都一樣。（`Session → Copy VNC Cursor Diagnostics` 可以自己看）
