@@ -52,13 +52,30 @@ final class ASCIIKeyboardTests: XCTestCase {
         }
     }
 
-    /// ⌘/⌃/⌥ chords belong to the library's shortcut path — taking them over
-    /// here would swallow the app's own menu key equivalents too.
-    func testModifierChordsAreLeftAlone() {
+    /// Where the remote does not own the modifiers, taking the chords over
+    /// would swallow the app's own menu key equivalents.
+    func testModifierChordsAreLeftAloneUnlessTheRemoteOwnsThem() {
         XCTAssertFalse(sends("a", command: true))
         XCTAssertFalse(sends("a", control: true))
         XCTAssertFalse(sends("a", option: true))
         XCTAssertFalse(sends("a", function: true), "arrows and F-keys travel by key code")
+    }
+
+    /// With a remote desktop focused the library already forwards ⌘ chords to
+    /// it, so ⌘C has to be translated like anything else or an input method
+    /// decides what the remote receives — which broke copy and paste.
+    func testModifierChordsAreTranslatedWhenTheRemoteOwnsThem() {
+        for chord in [(command: true, control: false, option: false),
+                      (command: false, control: true, option: false),
+                      (command: false, control: false, option: true)] {
+            XCTAssertTrue(RemoteKeyPolicy.sendsPhysicalKey(
+                command: chord.command, control: chord.control, option: chord.option,
+                function: false, character: "c", modifiersGoToRemote: true))
+        }
+        XCTAssertFalse(RemoteKeyPolicy.sendsPhysicalKey(
+            command: false, control: false, option: false, function: true,
+            character: "c", modifiersGoToRemote: true),
+            "the arrows still travel by key code")
     }
 
     func testShiftAloneStillCountsAsTyping() {

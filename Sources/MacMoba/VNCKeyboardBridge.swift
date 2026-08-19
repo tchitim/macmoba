@@ -181,7 +181,13 @@ final class VNCKeyboardBridge: ObservableObject {
                                                option: flags.contains(.option),
                                                function: flags.contains(.function),
                                                character: character,
-                                               grabbed: isGrabbed && grabbedView === view),
+                                               // We only get here with a remote
+                                               // desktop focused, and in that
+                                               // state the library already
+                                               // forwards ⌘ chords to it — so
+                                               // ⌘C is the remote's, captured
+                                               // or not, and must arrive right.
+                                               modifiersGoToRemote: true),
               let character else { return event }
 
         let keys = VNCKeyCode.keyCodesFrom(characters: character)

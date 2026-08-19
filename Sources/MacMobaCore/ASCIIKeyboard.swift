@@ -69,19 +69,21 @@ public enum RemoteKeyPolicy {
     /// by rewriting it here — and Escape in particular must stay on that path,
     /// because it is also the release gesture.
     ///
-    /// Modifier chords are only taken over once input is `grabbed`. Off the
-    /// grab they belong to this Mac: swallowing them would eat MacMoba's own
-    /// menu key equivalents. Under it they belong to the remote, which is what
-    /// capturing input means — and routing them here fixes them for the same
-    /// reason plain typing needed fixing.
+    /// Modifier chords are only taken over when they are the remote's to
+    /// receive — which, for a focused remote desktop, they already are: the
+    /// library consumes ⌘ chords and forwards them, so ⌘C has not reached
+    /// MacMoba's own menus for a long time. Translating them here changes
+    /// nothing about where they go and fixes what arrives, for exactly the
+    /// reason plain typing needed fixing. Where the remote does NOT own them,
+    /// swallowing them would eat the app's own key equivalents.
     public static func sendsPhysicalKey(command: Bool,
                                         control: Bool,
                                         option: Bool,
                                         function: Bool,
                                         character: String?,
-                                        grabbed: Bool = false) -> Bool {
+                                        modifiersGoToRemote: Bool = false) -> Bool {
         guard !function else { return false }
-        if !grabbed {
+        if !modifiersGoToRemote {
             guard !command, !control, !option else { return false }
         }
         guard let character, character.count == 1,
