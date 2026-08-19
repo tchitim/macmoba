@@ -134,6 +134,15 @@ final class VNCKeyboardBridge: ObservableObject {
         lastTypedKeyCount = keysyms.count
         guard !keysyms.isEmpty else { return }
         Task {
+            // The chord that asked for this is still physically down, and the
+            // remote was told so by the modifier events that reached it. Typing
+            // now would arrive as ⌘H, ⌘E, ⌘L… — menu shortcuts, not text, which
+            // is why the remote jumped somewhere and showed nothing. Let go of
+            // them over there first; the real keys resync when the hand does.
+            for modifier: VNCKeyCode in [.command, .rightCommand, .option, .rightOption,
+                                         .control, .rightControl, .shift, .rightShift] {
+                connection.keyUp(modifier)
+            }
             for keysym in keysyms {
                 let key = VNCKeyCode(keysym)
                 connection.keyDown(key)
