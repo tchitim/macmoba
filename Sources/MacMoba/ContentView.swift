@@ -595,6 +595,39 @@ private struct TabReorderDropDelegate: DropDelegate {
     func dropExited(info: DropInfo) {}
 }
 
+/// "This tab is waiting for you." A still dot in a row of tabs is easy to miss,
+/// so it pings outward like a radar sweep — but the dot underneath stays solid
+/// the whole time, because it is a status indicator and a status you can only
+/// read at the right moment is worse than a quiet one.
+private struct AttentionDot: View {
+    @State private var pinging = false
+
+    /// Someone who has asked the system for less motion should not be handed a
+    /// permanently animating window; they get a halo instead of a sweep.
+    private var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    var body: some View {
+        Circle()
+            .fill(Color.blue)
+            .frame(width: 7, height: 7)
+            .overlay {
+                Circle()
+                    .stroke(Color.blue, lineWidth: 1.5)
+                    .scaleEffect(pinging ? 2.4 : 1)
+                    .opacity(pinging ? 0 : 0.7)
+            }
+            .accessibilityLabel("needs attention")
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeOut(duration: 1.1).repeatForever(autoreverses: false)) {
+                    pinging = true
+                }
+            }
+    }
+}
+
 struct TabChip: View {
     @EnvironmentObject var app: AppState
     @EnvironmentObject var window: WindowState
@@ -614,10 +647,7 @@ struct TabChip: View {
                 .font(.callout)
             // A pane in this tab wants the user (bell / resumed output).
             if tab.attentionCount > 0 {
-                Circle()
-                    .fill(Color.blue)
-                    .frame(width: 6, height: 6)
-                    .accessibilityLabel("needs attention")
+                AttentionDot()
             }
             Button {
                 window.closeTab(tab)
