@@ -287,8 +287,7 @@ private struct CaptureHint: View {
     var body: some View {
         Group {
             if showing {
-                Label("Input captured — press Esc twice to release",
-                      systemImage: "lock.fill")
+                Label("Input captured — \(bridge.releaseHint)", systemImage: "lock.fill")
                     .font(.callout)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12).padding(.vertical, 7)

@@ -75,6 +75,37 @@ final class InputGrabTests: XCTestCase {
         XCTAssertFalse(gesture.escapePressed(at: 10.1), "the armed press was dropped")
     }
 
+    // MARK: - the modifier release
+
+    func testHoldingAndReleasingTheChordReleases() {
+        var gesture = ModifierChordRelease()
+        XCTAssertFalse(gesture.modifiersChanged(held: true), "not until you let go")
+        XCTAssertTrue(gesture.modifiersChanged(held: false))
+    }
+
+    /// ⌃⌥ plus a letter is a shortcut the remote should receive, not a
+    /// half-finished release.
+    func testAKeyPressedDuringTheChordCancelsIt() {
+        var gesture = ModifierChordRelease()
+        _ = gesture.modifiersChanged(held: true)
+        gesture.otherKeyPressed()
+        XCTAssertFalse(gesture.modifiersChanged(held: false))
+    }
+
+    func testLettingGoWithoutHoldingDoesNothing() {
+        var gesture = ModifierChordRelease()
+        XCTAssertFalse(gesture.modifiersChanged(held: false))
+        XCTAssertFalse(gesture.modifiersChanged(held: false))
+    }
+
+    /// Releasing once must not leave it armed for the next stray modifier.
+    func testTheGestureDisarmsAfterFiring() {
+        var gesture = ModifierChordRelease()
+        _ = gesture.modifiersChanged(held: true)
+        XCTAssertTrue(gesture.modifiersChanged(held: false))
+        XCTAssertFalse(gesture.modifiersChanged(held: false))
+    }
+
     // MARK: - pinning the pointer
 
     func testPointInsideIsUnchanged() {

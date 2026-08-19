@@ -108,6 +108,40 @@ public struct RelativePointer: Equatable {
     }
 }
 
+/// Recognises "press ⌃⌥ and let go" — the release gesture that cannot collide
+/// with anything on the remote, because holding two modifiers and pressing
+/// nothing means nothing to any program. Escape twice does collide: Claude Code
+/// reads it as "go back a message", and the release forwards both presses on
+/// purpose so that Escape keeps working over there.
+public struct ModifierChordRelease {
+    private var armed = false
+
+    public init() {}
+
+    /// Feed every modifier change. `held` is true while exactly Control and
+    /// Option are down. Returns true when they are let go having been held
+    /// alone — the gesture completes on release, so it needs no timer and
+    /// cannot fire while you are still deciding.
+    public mutating func modifiersChanged(held: Bool) -> Bool {
+        if held {
+            armed = true
+            return false
+        }
+        defer { armed = false }
+        return armed
+    }
+
+    /// Any other key cancels it: ⌃⌥ plus a letter is a shortcut the remote
+    /// should get, not a half-finished release.
+    public mutating func otherKeyPressed() {
+        armed = false
+    }
+
+    public mutating func reset() {
+        armed = false
+    }
+}
+
 public enum PointerClamp {
     /// The nearest point inside `rect`. Used to keep the pointer from leaving a
     /// captured remote desktop: `maxX`/`maxY` are outside the rectangle, so the

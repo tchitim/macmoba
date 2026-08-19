@@ -51,6 +51,20 @@ final class VNCKeyboardBridge: ObservableObject {
     private(set) var lastTypedKeyCount: Int?
     private var previousHotKeyMode: UnsafeMutableRawPointer?
     private var escapeGesture = DoubleEscapeRelease()
+    private var chordGesture = ModifierChordRelease()
+    /// Which gesture lets go of the keyboard. ⌃⌥ by default because Escape
+    /// twice, while easier to remember, is also a gesture the REMOTE may want:
+    /// Claude Code reads it as "go back a message", and both presses are
+    /// forwarded on purpose so Escape keeps working over there.
+    @Published var releasesWithEscape: Bool =
+        UserDefaults.standard.bool(forKey: "vncReleasesWithEscape") {
+        didSet { UserDefaults.standard.set(releasesWithEscape, forKey: "vncReleasesWithEscape") }
+    }
+
+    /// What to tell the user on screen, so the hint always matches the setting.
+    var releaseHint: String {
+        releasesWithEscape ? "press Esc twice to release" : "press ⌃⌥ to release"
+    }
     private var observers: [NSObjectProtocol] = []
 
     func install() {
@@ -60,7 +74,7 @@ final class VNCKeyboardBridge: ObservableObject {
                        .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
                        .otherMouseDown, .otherMouseUp,
                        .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
-                       .scrollWheel]
+                       .scrollWheel, .flagsChanged]
         ) { [weak self] event in
             // Unwrapped in two steps on purpose. `self?.handle(event) ?? event`
             // reads the same but is not: optional chaining flattens "no bridge"
@@ -156,8 +170,21 @@ final class VNCKeyboardBridge: ObservableObject {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown: return handleMouseDown(event)
         case .leftMouseUp, .rightMouseUp, .otherMouseUp: return handleMouseUp(event)
         case .scrollWheel: return handleScroll(event)
+        case .flagsChanged: return handleFlagsChanged(event)
         default: return handlePointerMove(event)
         }
+    }
+
+    /// The ⌃⌥ release. Modifier changes are watched even when not captured —
+    /// harmlessly, since the gesture only does anything to a live capture.
+    private func handleFlagsChanged(_ event: NSEvent) -> NSEvent? {
+        let flags = event.modifierFlags
+        let held = flags.contains(.control) && flags.contains(.option)
+            && !flags.contains(.command) && !flags.contains(.shift)
+        if chordGesture.modifiersChanged(held: held), isGrabbed, !releasesWithEscape {
+            releaseGrab()
+        }
+        return event
     }
 
     private func handleMouseDown(_ event: NSEvent) -> NSEvent? {
@@ -211,8 +238,12 @@ final class VNCKeyboardBridge: ObservableObject {
         // that depends on other state being right is not a way out. It also
         // stays on the library's key-code path, so the remote receives every
         // press; we only watch the timing.
+        // Any key cancels a half-made ⌃⌥ gesture: that combination plus a
+        // letter is a shortcut, and the remote should get it.
+        if event.type == .keyDown { chordGesture.otherKeyPressed() }
+
         if event.keyCode == UInt16(kVK_Escape) {
-            if event.type == .keyDown, isGrabbed {
+            if event.type == .keyDown, isGrabbed, releasesWithEscape {
                 let released = event.isARepeat
                     ? escapeGesture.escapeHeld(at: event.timestamp)
                     : escapeGesture.escapePressed(at: event.timestamp)
@@ -283,6 +314,7 @@ final class VNCKeyboardBridge: ObservableObject {
     private func grab(_ view: VNCCAFramebufferView, at viewPoint: CGPoint) {
         grabbedView = view
         escapeGesture.reset()
+        chordGesture.reset()
         isGrabbed = true
         pointer = RemotePointerSession(view: view, startingAt: viewPoint)
         // Suppressing this Mac's own hot keys — ⌘Tab, Spotlight, the input
