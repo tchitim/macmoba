@@ -189,6 +189,7 @@ extension VNCTab: VNCConnectionDelegate {
     nonisolated func connection(_ connection: VNCConnection,
                                 didUpdateCursor cursor: VNCCursor) {
         Task { @MainActor in
+            self.app?.vncCursorDiagnostics.record(cursor)
             self.container.framebufferView?.connection(connection, didUpdateCursor: cursor)
         }
     }

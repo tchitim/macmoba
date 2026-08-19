@@ -294,6 +294,9 @@ final class AppState: ObservableObject {
     /// selected on THIS Mac cannot decide what the remote one receives, and
     /// owns the click-to-capture grab.
     let vncKeyboard = VNCKeyboardBridge()
+    /// Counts what the server actually sends about the pointer, to answer why
+    /// the remote cursor never changes shape.
+    let vncCursorDiagnostics = VNCCursorDiagnostics()
     /// Kept as the concrete type as well: `HostKeyVerification.store` is the
     /// protocol, which deliberately only knows how to look up and pin. Review
     /// and revocation need the store itself.

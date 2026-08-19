@@ -146,6 +146,10 @@ struct MacMobaCommands: Commands {
                                  set: { app.vncKeyboard.capturesOnClick = $0 }))
             Button("Release Captured Input") { app.vncKeyboard.release() }
                 .disabled(!app.vncKeyboard.isGrabbed)
+            Button("Copy VNC Cursor Diagnostics") {
+                app.vncCursorDiagnostics.copyToPasteboard()
+                app.infoMessage = "Cursor diagnostics copied."
+            }
             Divider()
             Button(window?.selectedTab?.focusedPane?.logURL == nil
                    ? "Start Session Log" : "Stop Session Log") {
