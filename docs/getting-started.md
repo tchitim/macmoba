@@ -153,4 +153,4 @@ MacMoba 使用 [Sparkle](https://sparkle-project.org/)：預設每天檢查一�
 - **不支援 ssh-agent 與 keyboard-interactive（2FA/OTP）**：上游函式庫尚未提供
 - **X11 轉發**需另外安裝 XQuartz，並開啟 TCP 監聽
 - **Session log 是明文**：畫面上出現的機密都會寫進去（檔案 0600）
-- **貼上到 VNC 遠端桌面要用 ⌥⌘V**：macOS 自己的 VNC 伺服器**不理會標準的剪貼簿訊息**（Apple 的 Screen Sharing 走它自己的私有擴充，所以那個 App 可以），而且該訊息在協定上只能承載 Latin-1，中文本來就過不去。**⌥⌘V** 改成把剪貼簿內容**逐字打進**遠端（用 X11 的 Unicode keysym，中文可用）。反方向（遠端 → 本機）是自動的。
+- **VNC 剪貼簿只能傳 Latin-1**：這是 RFB 協定本身的限制，中文、破折號、emoji 都過不去（英數字則正常，兩個方向都自動同步）。要把**中文貼到遠端**請用 **⌥⌘V**——MacMoba 會把剪貼簿內容**逐字打進**遠端，用的是 X11 的 Unicode keysym，所以不受那個限制。
