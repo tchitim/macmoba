@@ -83,7 +83,7 @@ final class VNCTab: NSObject, ObservableObject, Identifiable {
                     frameEncodings: [.copyRect, .zrle, .zlib, .hextile, .coRRE, .rre, .raw]
                 )
                 let connection = VNCConnection(settings: settings,
-                                               logger: VNCNSLogLogger(),
+                                               logger: app?.vncLogger ?? VNCDiagnosticLogger(),
                                                context: nil)
                 connection.delegate = self
                 self.connection = connection

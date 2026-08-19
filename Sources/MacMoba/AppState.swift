@@ -297,6 +297,16 @@ final class AppState: ObservableObject {
     /// Counts what the server actually sends about the pointer, to answer why
     /// the remote cursor never changes shape.
     let vncCursorDiagnostics = VNCCursorDiagnostics()
+    /// Keeps the library's own clipboard log lines, to answer which half of
+    /// copy-and-paste is silent.
+    let vncLogger = VNCDiagnosticLogger()
+
+    /// One report covering both VNC puzzles, for pasting into a bug report.
+    func copyVNCDiagnostics() {
+        let text = vncCursorDiagnostics.report + "\n\nclipboard\n" + vncLogger.report
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
     /// Kept as the concrete type as well: `HostKeyVerification.store` is the
     /// protocol, which deliberately only knows how to look up and pin. Review
     /// and revocation need the store itself.
