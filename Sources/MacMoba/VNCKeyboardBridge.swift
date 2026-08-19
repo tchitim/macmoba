@@ -40,6 +40,9 @@ final class VNCKeyboardBridge: ObservableObject {
 
     private var monitor: Any?
     private weak var grabbedView: VNCCAFramebufferView?
+    /// Present exactly while the pointer is decoupled and we are driving the
+    /// remote one ourselves.
+    private var pointer: RemotePointerSession?
     private var previousHotKeyMode: UnsafeMutableRawPointer?
     private var escapeGesture = DoubleEscapeRelease()
     private var observers: [NSObjectProtocol] = []
@@ -47,8 +50,11 @@ final class VNCKeyboardBridge: ObservableObject {
     func install() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.keyDown, .keyUp, .leftMouseDown, .mouseMoved, .leftMouseDragged,
-                       .rightMouseDragged, .otherMouseDragged]
+            matching: [.keyDown, .keyUp,
+                       .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+                       .otherMouseDown, .otherMouseUp,
+                       .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+                       .scrollWheel]
         ) { [weak self] event in
             // Unwrapped in two steps on purpose. `self?.handle(event) ?? event`
             // reads the same but is not: optional chaining flattens "no bridge"
@@ -76,19 +82,52 @@ final class VNCKeyboardBridge: ObservableObject {
 
     private func handle(_ event: NSEvent) -> NSEvent? {
         switch event.type {
-        case .leftMouseDown: return handleMouseDown(event)
         case .keyDown, .keyUp: return handleKey(event)
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown: return handleMouseDown(event)
+        case .leftMouseUp, .rightMouseUp, .otherMouseUp: return handleMouseUp(event)
+        case .scrollWheel: return handleScroll(event)
         default: return handlePointerMove(event)
         }
     }
 
     private func handleMouseDown(_ event: NSEvent) -> NSEvent? {
-        guard capturesOnClick, !isGrabbed,
+        if let pointer {
+            pointer.button(button(for: event), isDown: true)
+            return nil
+        }
+        guard capturesOnClick, !isGrabbed, event.type == .leftMouseDown,
               let window = event.window,
               let view = window.contentView?.hitTest(event.locationInWindow) as? VNCCAFramebufferView
         else { return event }
-        grab(view)
-        return event   // the click itself still belongs to the remote
+        grab(view, at: view.convert(event.locationInWindow, from: nil))
+        // The click that captured input is also a click on the remote desktop.
+        // Once the pointer is decoupled the library can no longer read it off
+        // the cursor, so it is sent here instead.
+        if let pointer {
+            pointer.button(.left, isDown: true)
+            return nil
+        }
+        return event
+    }
+
+    private func handleMouseUp(_ event: NSEvent) -> NSEvent? {
+        guard let pointer else { return event }
+        pointer.button(button(for: event), isDown: false)
+        return nil
+    }
+
+    private func handleScroll(_ event: NSEvent) -> NSEvent? {
+        guard let pointer else { return event }
+        pointer.scroll(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY)
+        return nil
+    }
+
+    private func button(for event: NSEvent) -> VNCMouseButton {
+        switch event.type {
+        case .rightMouseDown, .rightMouseUp: return .right
+        case .otherMouseDown, .otherMouseUp: return .middle
+        default: return .left
+        }
     }
 
     private func handleKey(_ event: NSEvent) -> NSEvent? {
@@ -128,35 +167,22 @@ final class VNCKeyboardBridge: ObservableObject {
         return nil
     }
 
-    /// Keep the pointer inside the captured desktop. Warping it back at the
-    /// edge is cheaper than true relative mode, which would mean hiding the
-    /// cursor — and the cursor IS the remote one here (RoyalVNC renders it as
-    /// an NSCursor), so hiding it would leave the remote with no pointer at all.
+    /// While captured the pointer is decoupled from the display, so the cursor
+    /// position means nothing and only the movement does: it drives a pointer
+    /// tracked in the remote screen's own coordinates.
     private func handlePointerMove(_ event: NSEvent) -> NSEvent? {
-        guard isGrabbed, let view = grabbedView, let window = view.window else { return event }
-        let onScreen = window.convertToScreen(view.convert(view.bounds, to: nil))
-        let location = NSEvent.mouseLocation
-        guard !onScreen.contains(location) else { return event }
-        let clamped = PointerClamp.clamp(location, to: onScreen)
-        CGWarpMouseCursorPosition(flippedToGlobal(clamped))
-        // Swallowed: forwarding a position we just refused would jump the
-        // remote cursor to the edge we are holding it away from.
+        guard let pointer else { return event }
+        pointer.move(dx: event.deltaX, dy: event.deltaY)
         return nil
-    }
-
-    /// AppKit screen coordinates are bottom-left origin; Core Graphics global
-    /// display coordinates are top-left, measured from the primary screen.
-    private func flippedToGlobal(_ point: CGPoint) -> CGPoint {
-        let primaryTop = NSScreen.screens.first?.frame.maxY ?? 0
-        return CGPoint(x: point.x, y: primaryTop - point.y)
     }
 
     // MARK: - grab lifecycle
 
-    private func grab(_ view: VNCCAFramebufferView) {
+    private func grab(_ view: VNCCAFramebufferView, at viewPoint: CGPoint) {
         grabbedView = view
         escapeGesture.reset()
         isGrabbed = true
+        pointer = RemotePointerSession(view: view, startingAt: viewPoint)
         // Suppressing this Mac's own hot keys — ⌘Tab, Spotlight, the input
         // source switch — is what makes the remote reachable with them. macOS
         // only allows it for a trusted process; without permission the capture
@@ -183,6 +209,8 @@ final class VNCKeyboardBridge: ObservableObject {
 
     private func releaseGrab() {
         guard isGrabbed else { return }
+        pointer?.end()
+        pointer = nil
         if let previousHotKeyMode {
             PopSymbolicHotKeyMode(previousHotKeyMode)
             self.previousHotKeyMode = nil

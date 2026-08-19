@@ -47,6 +47,45 @@ public struct DoubleEscapeRelease {
     }
 }
 
+/// Where the remote pointer is, driven by hardware deltas rather than by the
+/// local cursor's position — the pointer is decoupled from the display while
+/// input is captured, so its screen position stops meaning anything and only
+/// the movement it reports still does.
+///
+/// The position is kept in framebuffer pixels as a fraction, because a scaled
+/// desktop turns one point of hand movement into a fraction of a pixel;
+/// rounding on every event would drop slow movement entirely.
+public struct RelativePointer: Equatable {
+    public private(set) var position: CGPoint
+    /// The remote screen, in its own pixels.
+    public let size: CGSize
+
+    public init(position: CGPoint, size: CGSize) {
+        self.size = size
+        self.position = .zero
+        self.position = Self.clamped(position, in: size)
+    }
+
+    /// Apply one mouse-moved event. `scale` is how many view points the remote
+    /// draws each pixel at, so dividing by it converts hand movement into
+    /// remote pixels.
+    public mutating func move(dx: CGFloat, dy: CGFloat, scale: CGFloat) {
+        let scale = scale > 0 ? scale : 1
+        position = Self.clamped(CGPoint(x: position.x + dx / scale,
+                                        y: position.y + dy / scale), in: size)
+    }
+
+    /// What to put in a VNC pointer event.
+    public var framebufferPoint: (x: UInt16, y: UInt16) {
+        (UInt16(position.x.rounded(.down)), UInt16(position.y.rounded(.down)))
+    }
+
+    private static func clamped(_ point: CGPoint, in size: CGSize) -> CGPoint {
+        CGPoint(x: min(max(point.x, 0), max(size.width - 1, 0)),
+                y: min(max(point.y, 0), max(size.height - 1, 0)))
+    }
+}
+
 public enum PointerClamp {
     /// The nearest point inside `rect`. Used to keep the pointer from leaving a
     /// captured remote desktop: `maxX`/`maxY` are outside the rectangle, so the

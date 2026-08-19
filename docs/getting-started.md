@@ -104,6 +104,22 @@ macmoba hooks install codex     # 印出 config.toml 片段讓你自己貼
 
 ---
 
+## 遠端桌面的鍵盤與滑鼠
+
+**點進 VNC 畫面就會擷取輸入**（VMware／Parallels 的作法）：
+
+- 鍵盤全部送給遠端——包括 **⌃Space**，所以可以直接切換**遠端**的輸入法（🌐 鍵做不到：macOS 把它攔在系統層，App 收不到）
+- 滑鼠與本機游標脫鉤，移動量直接驅動遠端游標，**不會停在視窗邊緣**
+- **連按兩下 Esc** 解除擷取。單按的 Esc 照常送給遠端，所以 vim 不受影響
+
+第一次擷取會要求**輔助使用**權限——那是抑制本機系統快捷鍵（⌘Tab、Spotlight）唯一的途徑。**拒絕也能用**，只是那些鍵會留在本機。授權後要重新啟動 MacMoba。
+
+不想要這個行為就到 **Session → Capture Input on Click** 關掉。
+
+輸入法方面另有一點：MacMoba 送給遠端的一律是**實體鍵**（經 ASCII 鍵盤配置翻譯），不受本機選了什麼輸入法影響——組字是遠端那台自己的事。
+
+---
+
 ## 自動更新
 
 MacMoba 使用 [Sparkle](https://sparkle-project.org/)：預設每天檢查一次，有新版時詢問你是否下載，下載後驗證 EdDSA 簽章與 Developer ID 簽名，再替換並重新啟動。

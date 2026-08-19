@@ -78,6 +78,59 @@ final class InputGrabTests: XCTestCase {
         XCTAssertEqual(PointerClamp.clamp(CGPoint(x: 200, y: 50), to: rect), CGPoint(x: 99, y: 50))
     }
 
+    // MARK: - the relative pointer
+
+    func testMovementAccumulates() {
+        var pointer = RelativePointer(position: CGPoint(x: 100, y: 100),
+                                      size: CGSize(width: 1920, height: 1080))
+        pointer.move(dx: 10, dy: -5, scale: 1)
+        pointer.move(dx: 10, dy: -5, scale: 1)
+        XCTAssertEqual(pointer.position, CGPoint(x: 120, y: 90))
+    }
+
+    /// A downscaled desktop draws each remote pixel smaller, so the same hand
+    /// movement has to cover more of them.
+    func testScaleConvertsHandMovementIntoRemotePixels() {
+        var pointer = RelativePointer(position: .zero, size: CGSize(width: 1000, height: 1000))
+        pointer.move(dx: 100, dy: 100, scale: 0.5)
+        XCTAssertEqual(pointer.position, CGPoint(x: 200, y: 200))
+    }
+
+    /// The reason position is not rounded as it goes: on a scaled desktop each
+    /// event is a fraction of a pixel, and rounding every one of them would
+    /// throw slow movement away entirely.
+    func testSubPixelMovementIsNotLost() {
+        var pointer = RelativePointer(position: .zero, size: CGSize(width: 100, height: 100))
+        for _ in 0..<10 { pointer.move(dx: 1, dy: 0, scale: 4) }
+        XCTAssertEqual(pointer.position.x, 2.5, accuracy: 0.0001)
+        XCTAssertEqual(pointer.framebufferPoint.x, 2)
+    }
+
+    func testPointerStopsAtTheEdgesOfTheRemoteScreen() {
+        var pointer = RelativePointer(position: CGPoint(x: 10, y: 10),
+                                      size: CGSize(width: 800, height: 600))
+        pointer.move(dx: -9_999, dy: -9_999, scale: 1)
+        XCTAssertEqual(pointer.position, .zero)
+        pointer.move(dx: 9_999, dy: 9_999, scale: 1)
+        XCTAssertEqual(pointer.position, CGPoint(x: 799, y: 599))
+        XCTAssertEqual(pointer.framebufferPoint.x, 799)
+        XCTAssertEqual(pointer.framebufferPoint.y, 599)
+    }
+
+    func testAStartingPointOutsideTheScreenIsPulledIn() {
+        let pointer = RelativePointer(position: CGPoint(x: -40, y: 5_000),
+                                      size: CGSize(width: 640, height: 480))
+        XCTAssertEqual(pointer.position, CGPoint(x: 0, y: 479))
+    }
+
+    /// A zero scale would divide by zero; treat it as 1 rather than producing
+    /// an infinite jump.
+    func testZeroScaleIsTreatedAsOne() {
+        var pointer = RelativePointer(position: .zero, size: CGSize(width: 100, height: 100))
+        pointer.move(dx: 5, dy: 5, scale: 0)
+        XCTAssertEqual(pointer.position, CGPoint(x: 5, y: 5))
+    }
+
     func testDegenerateRectIsLeftAlone() {
         let point = CGPoint(x: 5, y: 5)
         XCTAssertEqual(PointerClamp.clamp(point, to: .zero), point)
