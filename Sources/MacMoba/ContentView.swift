@@ -47,11 +47,25 @@ struct ContentView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Toggle(isOn: Binding(get: { health.isEnabled },
-                                     set: { health.isEnabled = $0 })) {
+                                     set: { on in
+                    health.isEnabled = on
+                    // Turning it on changes little on screen until the first
+                    // sweep lands — and nothing at all if the folders are shut.
+                    // Say so, rather than leaving the button looking inert.
+                    let checkable = app.data.sessions.filter(\.isDirectlyProbeable).count
+                    app.infoMessage = on
+                        ? (checkable > 0
+                           ? "Health monitoring on — checking \(checkable) host(s) every 15s."
+                           : "Health monitoring on — no directly reachable hosts to check.")
+                        : "Health monitoring off."
+                })) {
                     Label("Health", systemImage: health.isEnabled
                           ? "heart.text.square.fill" : "heart.text.square")
                 }
                 .toggleStyle(.button)
+                // Tinted, not just recessed: with labels showing, the pressed
+                // look alone was not read as "on".
+                .foregroundStyle(health.isEnabled ? Color.green : Color.primary)
                 .help("Poll saved hosts and show reachability lights in the sidebar")
             }
             ToolbarItem(placement: .automatic) {

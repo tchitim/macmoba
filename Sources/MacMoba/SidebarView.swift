@@ -34,6 +34,8 @@ struct SidebarView: View {
     @State private var newFromTemplate: SessionConfig?
     @State private var showImporter = false
     @State private var monitoringSession: SessionConfig?
+    /// Injected by ContentView; the folder roll-up reads it when shut.
+    @EnvironmentObject var health: HealthMonitor
     @State private var collapsedGroups: Set<String> =
         Set(UserDefaults.standard.stringArray(forKey: "collapsedGroups") ?? [])
     @State private var newGroupSession: SessionConfig?
@@ -364,6 +366,9 @@ struct SidebarView: View {
             Text(row.name)
                 .fontWeight(.medium)
             Spacer()
+            // Closing a folder hides its members' lights, which is when their
+            // state matters most.
+            if collapsed { groupHealthMark(group) }
             Text("\(total)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -517,6 +522,30 @@ struct SidebarView: View {
                 }
             }
         )
+    }
+
+    /// A folder's members rolled into one mark. Only drawn when the folder is
+    /// shut and monitoring is on — an unchecked folder gets nothing, because a
+    /// light meaning "no information" is one people learn to ignore.
+    @ViewBuilder private func groupHealthMark(_ group: String) -> some View {
+        if health.isEnabled {
+            let statuses = app.data.sessions
+                .filter { GroupTree.contains(group, group: $0.group) && $0.reachabilityTarget != nil }
+                .map { health.status[$0.id] }
+            switch GroupHealth.summary(of: statuses) {
+            case .down(let count):
+                HStack(spacing: 3) {
+                    Circle().fill(.red).frame(width: 6, height: 6)
+                    Text("\(count)").font(.caption2).foregroundStyle(.red)
+                }
+                .help("\(count) unreachable in this folder")
+            case .allUp:
+                Circle().fill(.green).frame(width: 6, height: 6)
+                    .help("Everything checked in this folder answered")
+            case .unknown:
+                EmptyView()
+            }
+        }
     }
 
     private func toggleGroup(_ group: String) {
