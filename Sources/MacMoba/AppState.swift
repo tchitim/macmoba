@@ -809,6 +809,22 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Close the pane a dead terminal sits in, wherever it lives. The pane
+    /// knows nothing about windows, and closing the last pane of a tab closes
+    /// the tab — which is what "close this" means when only one is left.
+    func closePaneHoldingDeadTerminal(_ pane: TerminalTab) {
+        for window in windows {
+            if let tab = window.tabs.first(where: { $0.localTerminal === pane }) {
+                window.closeTab(tab)
+                return
+            }
+            if let tab = window.tabs.first(where: { $0.panes.contains { $0 === pane } }) {
+                window.closePane(pane, in: tab)
+                return
+            }
+        }
+    }
+
     func remoteStats(for session: SessionConfig) async throws -> RemoteStats {
         let resolved = try await SecretResolver.resolve(session: session)
         let chain = jumpChain(for: session)

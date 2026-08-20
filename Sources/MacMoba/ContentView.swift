@@ -485,7 +485,9 @@ struct PaneLeafView: View {
                             Label("Reconnect", systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(.borderedProminent)
-                        Text("or press Return")
+                        // Both ways out, said where you are looking when you
+                        // need them.
+                        Text("Return to reconnect · Esc to close")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.5))
                     }

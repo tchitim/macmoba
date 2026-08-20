@@ -562,10 +562,14 @@ extension TerminalTab: TerminalViewDelegate {
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
         let bytes = Data(data)
         Task { @MainActor in
-            if case .closed = state, bytes.contains(0x0d) {
-                // Enter in a dead terminal: reconnect in place.
-                connect()
-                return
+            if case .closed = state {
+                // Nothing can be typed into a dead session, so the only keys
+                // that mean anything are the two ways out of it.
+                switch DeadTerminalKey.action(for: Array(bytes)) {
+                case .reconnect: connect(); return
+                case .close: app?.closePaneHoldingDeadTerminal(self); return
+                case .ignore: return
+                }
             }
             if let app, app.broadcastInput {
                 app.broadcastWrite(bytes, from: self.id)
