@@ -250,9 +250,16 @@ struct VNCHostView: NSViewRepresentable {
         container.autoresizingMask = [.width, .height]
         host.addSubview(container)
         DispatchQueue.main.async {
-            if let fb = container.framebufferView {
-                container.window?.makeFirstResponder(fb)
-            }
+            guard let fb = container.framebufferView else { return }
+            container.window?.makeFirstResponder(fb)
+            // RoyalVNC starts its display link only in `viewDidMoveToWindow`,
+            // and only when a window is already there. Re-parenting takes the
+            // link away and the view may rejoin a window at a moment AppKit
+            // does not report, leaving the session drawing frames nobody
+            // paints — black until something else forces a layout, which is
+            // why switching tabs "fixed" it. Ask for it again explicitly.
+            if fb.window != nil { fb.viewDidMoveToWindow() }
+            fb.needsDisplay = true
         }
     }
 }
