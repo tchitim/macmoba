@@ -271,6 +271,14 @@ final class SessionTab: ObservableObject, Identifiable {
         Self.collect(root)
     }
 
+    /// The focused leaf, whatever it holds. What the chip shows has to follow
+    /// this rather than the terminals: close the shell beside a remote desktop
+    /// and there is no terminal left to name the tab after.
+    var focusedContent: PaneContent? {
+        let all = Self.contents(root)
+        return all.first { $0.id == focusedPaneID } ?? all.first
+    }
+
     /// ⚠️ Same caveat as `panes`: on a single-pane tab this returns the
     /// placeholder, not nil.
     var focusedPane: TerminalTab? {
@@ -282,6 +290,16 @@ final class SessionTab: ObservableObject, Identifiable {
 
     /// What this tab is, for the chip's icon. Local shells are terminals too.
     var kind: SessionKind {
+        // A mixed tab is whatever you are looking at inside it.
+        if let focused = focusedContent, paneCount > 0 {
+            switch focused {
+            case .vnc: return .vnc
+            case .rdp: return .rdp
+            case .web: return .web
+            case .terminal(let pane):
+                if !isSinglePane { return pane.config.sessionKind }
+            }
+        }
         if vnc != nil { return .vnc }
         if rdp != nil { return .rdp }
         if web != nil { return .web }
@@ -301,7 +319,7 @@ final class SessionTab: ObservableObject, Identifiable {
         if let rdp { return rdp.title }
         if let web { return web.title }
         if isFileBrowserOnly { return config.name }
-        let base = focusedPane?.title ?? config.name
+        let base = focusedContent?.title ?? config.name
         let count = paneCount
         return count > 1 ? "\(base) ▦\(count)" : base
     }
