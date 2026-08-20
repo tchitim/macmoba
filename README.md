@@ -13,6 +13,7 @@ macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP
 **連線**
 - SSH（多層跳板 `ssh -J` 鏈、gateway failover）、Mosh（斷網續連）、Telnet、Rlogin、序列埠（RS-232）
 - VNC、RDP（NLA/CredSSP、跨螢幕、剪貼簿含檔案）、FTP/FTPS
+- **遠端桌面輸入擷取**：點進畫面即接管鍵盤與滑鼠（⌃⌥ 放開），送的是實體鍵，所以組字交給遠端自己的輸入法；⌥⌘V／⌥⌘C 讓中文也能雙向貼上
 - 網頁分頁，可指定走某個 SSH 連線的 SOCKS 隧道看內網頁面
 - 本機終端分頁
 
@@ -26,6 +27,7 @@ macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP
 - 分割窗格、MultiExec 廣播輸入、巨集、Session log、scrollback 搜尋
 - SFTP 面板（Quick Look、chmod、隱藏檔、拖放上傳）
 - ZMODEM 雙向傳檔（`rz`/`sz`）、貼上截圖自動上傳到遠端
+- X11 forwarding（走 remote forward，需 XQuartz）
 
 **工具**
 - SSH 金鑰產生器（ed25519 / ECDSA）
@@ -70,7 +72,7 @@ swift test                  # 測試（部分整合測試需要 TestSupport/ssh-
 ./make-app.sh --notarize    # 打包 + 公證 + 產生 DMG
 ```
 
-測試套件約 680 項。需要外部服務的整合測試在服務未啟動時會自動略過：
+測試套件約 750 項。需要外部服務的整合測試在服務未啟動時會自動略過：
 
 ```bash
 cd TestSupport && npm install && node ssh-server.js   # 本機 SSH/SFTP 測試伺服器
