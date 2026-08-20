@@ -81,7 +81,7 @@ ln -s /Applications/MacMoba.app/Contents/Resources/bin/macmoba /usr/local/bin/ma
 ```bash
 macmoba list-tabs                          # 列出所有分頁與狀態
 macmoba open "web-server"                  # 開啟已存的連線
-macmoba open-url http://10.0.0.5:3000 --via "Jumphost"   # 開網頁分頁，走某個 SSH 的 SOCKS 隧道
+macmoba open-url http://192.0.2.5:3000 --via "Jumphost"   # 開網頁分頁，走某個 SSH 的 SOCKS 隧道
 macmoba send --tab 0 'uptime\n'            # 對某個分頁打字（\n = Enter）
 macmoba read-screen --tab 0 --lines 30     # 讀回畫面內容
 macmoba notify --title "部署完成"           # 跳出通知
