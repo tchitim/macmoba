@@ -729,6 +729,15 @@ struct TabChip: View {
                     in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onTapGesture { window.selectedTabID = tab.id }
+        // The ▦n badge is right here, so this is where a hand goes looking for
+        // a way to undo the split.
+        .contextMenu {
+            if tab.paneCount > 1 {
+                Button("Break Apart into Tabs") { window.ungroupPanes(of: tab) }
+                Divider()
+            }
+            Button("Close Tab") { window.closeTab(tab) }
+        }
     }
 
     private var statusColor: Color {
