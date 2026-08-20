@@ -203,6 +203,7 @@ final class AppState: ObservableObject {
     // MARK: - Workspace restore
 
     private static let openSessionsKey = "openSessionIDs"
+    private static let openLayoutKey = "openWorkspaceLayout"
 
     /// Remember the sessions currently open so the next launch can reopen them.
     /// Called on user-driven open/close only — never while the vault is locking,
@@ -211,22 +212,26 @@ final class AppState: ObservableObject {
     /// not in the vault and they fall out naturally.
     func saveOpenWorkspace() {
         guard unlocked else { return }
-        let valid = Set(data.sessions.map(\.id))
-        var seen = Set<String>()
-        var ids: [String] = []
-        for tab in allTabs where valid.contains(tab.config.id)
-            && seen.insert(tab.config.id).inserted {
-            ids.append(tab.config.id)
-        }
-        UserDefaults.standard.set(ids, forKey: Self.openSessionsKey)
+        // The arrangement, not just the list: a shell beside a remote desktop
+        // came back as two unrelated tabs, and rebuilding that by hand every
+        // morning is the work a session manager exists to remove.
+        let layout = WorkspaceLayout(tabs: allTabs.map(\.layout))
+            .restorable(available: data.sessions.map(\.id))
+        UserDefaults.standard.set(layout.encoded(), forKey: Self.openLayoutKey)
+        // Kept in step so an older build — or a downgrade — still finds
+        // something it understands.
+        UserDefaults.standard.set(layout.tabs.compactMap(\.sessionIDs.first),
+                                  forKey: Self.openSessionsKey)
     }
 
-    /// The sessions to reopen on launch, filtered to those that still exist.
-    func restorableWorkspaceIDs() -> [String] {
-        guard reopenSessionsOnLaunch else { return [] }
-        let saved = UserDefaults.standard.stringArray(forKey: Self.openSessionsKey) ?? []
-        return WorkspaceRestore.restorableIDs(saved: saved,
-                                              available: data.sessions.map(\.id))
+    /// The arrangement to restore, pruned to sessions that still exist. Falls
+    /// back to the flat list an older version saved.
+    func restorableWorkspace() -> WorkspaceLayout {
+        guard reopenSessionsOnLaunch else { return WorkspaceLayout(tabs: []) }
+        let saved = WorkspaceLayout.decoded(from: UserDefaults.standard.data(forKey: Self.openLayoutKey))
+            ?? WorkspaceLayout.fromSessionIDs(
+                UserDefaults.standard.stringArray(forKey: Self.openSessionsKey) ?? [])
+        return saved.restorable(available: data.sessions.map(\.id))
     }
 
     // MARK: - Sleep / wake

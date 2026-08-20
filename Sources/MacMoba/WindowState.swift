@@ -171,9 +171,16 @@ final class WindowState: ObservableObject {
     /// Reopen the sessions that were open last time. Called once, on the primary
     /// window, after the vault unlocks.
     func restoreWorkspace() {
-        for id in app.restorableWorkspaceIDs() {
-            if let session = app.data.sessions.first(where: { $0.id == id }) {
-                openTab(for: session)
+        let sessions = Dictionary(app.data.sessions.map { ($0.id, $0) },
+                                  uniquingKeysWith: { first, _ in first })
+        for layout in app.restorableWorkspace().tabs {
+            if case .leaf(let id) = layout {
+                // One pane: the ordinary path, so a plain tab restores exactly
+                // as it always did.
+                if let session = sessions[id] { openTab(for: session) }
+            } else if let tab = SessionTab.restore(layout, sessions: sessions, app: app) {
+                tabs.append(tab)
+                selectedTabID = tab.id
             }
         }
     }
@@ -291,6 +298,7 @@ final class WindowState: ObservableObject {
     /// a shell is the point of this, not an edge case.
     func splitWithNewConnection(_ config: SessionConfig, axis: Axis) {
         _ = selectedTab?.splitFocused(axis, with: app.resolved(config))
+        app.saveOpenWorkspace()
     }
 
     /// MobaXterm-style split: move an existing open tab into the current tab
@@ -330,6 +338,7 @@ final class WindowState: ObservableObject {
             movePaneToOwnTab(content, from: tab)
         }
         gatheredPaneIDs = []
+        app.saveOpenWorkspace()
     }
 
     @discardableResult
@@ -378,6 +387,7 @@ final class WindowState: ObservableObject {
         tabs.removeAll { $0.id == source.id }
         dest.merge(node: node, axis: axis)
         selectedTabID = dest.id
+        app.saveOpenWorkspace()
     }
 
     func closeFocusedPane() {
@@ -392,12 +402,14 @@ final class WindowState: ObservableObject {
         if !tab.closeContent(content) {
             closeTab(tab)
         }
+        app.saveOpenWorkspace()
     }
 
     func closePane(_ pane: TerminalTab, in tab: SessionTab) {
         if !tab.closePane(pane) {
             closeTab(tab)
         }
+        app.saveOpenWorkspace()
     }
 
     // MARK: - Search / logging

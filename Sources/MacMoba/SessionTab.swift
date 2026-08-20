@@ -33,6 +33,16 @@ final class SessionTab: ObservableObject, Identifiable {
             return nil
         }
 
+        /// The vault session behind this pane, for saving the arrangement.
+        var sessionID: String {
+            switch self {
+            case .terminal(let pane): return pane.config.id
+            case .vnc(let pane): return pane.config.id
+            case .rdp(let pane): return pane.config.id
+            case .web(let pane): return pane.config.id
+            }
+        }
+
         var id: UUID {
             switch self {
             case .terminal(let pane): return pane.id
@@ -173,6 +183,86 @@ final class SessionTab: ObservableObject, Identifiable {
         if focusedPaneID == content.id { focusedPaneID = Self.contents(root).first?.id }
         settleLayout()
         return true
+    }
+
+    /// This tab's arrangement, for saving. Panes whose session is not in the
+    /// vault — a local shell, an ad-hoc connect — carry an id nothing will
+    /// match on restore, and are pruned then rather than filtered here.
+    var layout: PaneLayout {
+        Self.layout(of: root)
+    }
+
+    private static func layout(of node: Node) -> PaneLayout {
+        switch node {
+        case .leaf(let content):
+            return .leaf(sessionID: content.sessionID)
+        case .empty:
+            return .empty
+        case .split(let axis, _, let first, let second):
+            return .split(vertical: axis == .vertical,
+                          first: layout(of: first), second: layout(of: second))
+        }
+    }
+
+    /// Rebuild a saved arrangement. Each leaf dials afresh — what is restored
+    /// is the layout, never a connection.
+    static func restore(_ layout: PaneLayout, sessions: [String: SessionConfig],
+                        app: AppState) -> SessionTab? {
+        guard let first = layout.sessionIDs.first, let config = sessions[first] else { return nil }
+        let tab = SessionTab(restoringInto: config, app: app)
+        guard let node = tab.node(for: layout, sessions: sessions) else { return nil }
+        tab.adoptRestored(node)
+        return tab
+    }
+
+    private func node(for layout: PaneLayout,
+                      sessions: [String: SessionConfig]) -> Node? {
+        switch layout {
+        case .empty:
+            return .empty(id: UUID())
+        case .leaf(let sessionID):
+            guard let app, let config = sessions[sessionID] else { return nil }
+            return .leaf(makeContent(for: app.resolved(config), app: app))
+        case .split(let vertical, let first, let second):
+            let a = node(for: first, sessions: sessions)
+            let b = node(for: second, sessions: sessions)
+            switch (a, b) {
+            case (let a?, let b?):
+                return .split(axis: vertical ? .vertical : .horizontal, id: UUID(),
+                              first: a, second: b)
+            case (let a?, nil): return a
+            case (nil, let b?): return b
+            case (nil, nil): return nil
+            }
+        }
+    }
+
+    private func makeContent(for config: SessionConfig, app: AppState) -> PaneContent {
+        switch config.sessionKind {
+        case .vnc: return .vnc(VNCTab(config: config, app: app))
+        case .rdp: return .rdp(RDPTab(config: config, app: app))
+        case .web: return .web(WebTab(config: config, app: app))
+        default: return .terminal(TerminalTab(config: config, app: app))
+        }
+    }
+
+    /// A shell of a tab, filled in by `restore` once its tree is built.
+    private init(restoringInto config: SessionConfig, app: AppState) {
+        self.config = config
+        self.app = app
+        self.localTerminal = nil
+        self.isFileBrowserOnly = false
+        root = .empty(id: UUID())
+    }
+
+    private func adoptRestored(_ node: Node) {
+        root = node
+        let contents = Self.contents(node)
+        focusedPaneID = contents.first?.id
+        for content in contents {
+            register(content)
+            connect(content)
+        }
     }
 
     /// The config a detached leaf should carry into its own tab.
