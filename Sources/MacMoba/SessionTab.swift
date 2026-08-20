@@ -326,10 +326,11 @@ final class SessionTab: ObservableObject, Identifiable {
 
     var title: String {
         if let localTerminal { return localTerminal.title }
-        if let vnc { return vnc.title }
-        if let rdp { return rdp.title }
-        if let web { return web.title }
         if isFileBrowserOnly { return config.name }
+        // No per-kind cases: `focusedContent` already names whichever pane is
+        // in front, and asking "does this tab contain a VNC" — which is what
+        // `vnc` means now — would take the desktop's name for the whole tab and
+        // drop the ▦n badge with it.
         let base = focusedContent?.title ?? config.name
         let count = paneCount
         return count > 1 ? "\(base) ▦\(count)" : base
@@ -339,10 +340,15 @@ final class SessionTab: ObservableObject, Identifiable {
     /// The on-screen view the Overview thumbnails, or nil for a file browser.
     var snapshotView: NSView? {
         if let localTerminal { return localTerminal.termView }
-        if let vnc { return vnc.container }
-        if let rdp { return rdp.container }
-        if let web { return web.webView }
-        return focusedPane?.termView
+        // The pane in front, whatever it is — a thumbnail of the desktop beside
+        // the shell should show whichever one you were last looking at.
+        switch focusedContent {
+        case .terminal(let pane): return pane.termView
+        case .vnc(let pane): return pane.container
+        case .rdp(let pane): return pane.container
+        case .web(let pane): return pane.webView
+        case nil: return nil
+        }
     }
 
     /// The last picture taken of this tab, for when it cannot be taken now.
@@ -408,9 +414,6 @@ final class SessionTab: ObservableObject, Identifiable {
 
     var aggregateState: TerminalTab.State {
         if let localTerminal { return localTerminal.state }
-        if let vnc { return vnc.state }
-        if let rdp { return rdp.state }
-        if let web { return web.state }
         if isFileBrowserOnly { return fileBrowserState }
         // Every leaf, not only the terminals: a tab holding a shell and a
         // remote desktop is connected when either of them is.
