@@ -287,8 +287,10 @@ final class WindowState: ObservableObject {
     }
 
     /// Open a different saved session in a new pane of the current tab.
+    /// Put any saved session beside the focused pane — a remote desktop next to
+    /// a shell is the point of this, not an edge case.
     func splitWithNewConnection(_ config: SessionConfig, axis: Axis) {
-        selectedTab?.splitFocused(axis, config: config)
+        _ = selectedTab?.splitFocused(axis, with: app.resolved(config))
     }
 
     /// MobaXterm-style split: move an existing open tab into the current tab
@@ -379,6 +381,13 @@ final class WindowState: ObservableObject {
     func closeFocusedPane() {
         guard let tab = selectedTab, let pane = tab.focusedPane else { return }
         if !tab.closePane(pane) {
+            closeTab(tab)
+        }
+    }
+
+    /// Close a non-terminal leaf; the tab goes when its last leaf does.
+    func closePaneContent(_ content: SessionTab.PaneContent, in tab: SessionTab) {
+        if !tab.closeContent(content) {
             closeTab(tab)
         }
     }

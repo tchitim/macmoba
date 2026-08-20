@@ -8,8 +8,79 @@ import SwiftUI
 
 @MainActor
 final class SessionTab: ObservableObject, Identifiable {
+    /// What sits in a leaf of the split tree.
+    ///
+    /// One case today. It exists because the leaf used to BE a terminal, which
+    /// forced every other kind of tab — VNC, RDP, web — to park a
+    /// never-connected terminal in the tree just so `root` could be
+    /// non-optional. That placeholder is invisible in the type and has caused
+    /// several bugs on its own (splitting into an RDP tab, merging one away,
+    /// logging a pane that receives no bytes). Naming the content is the first
+    /// step to a tree that can hold a remote desktop beside a shell, and to a
+    /// type that stops lying in the meantime.
+    @MainActor
+    enum PaneContent {
+        case terminal(TerminalTab)
+        case vnc(VNCTab)
+        case rdp(RDPTab)
+        case web(WebTab)
+
+        /// Non-nil only for a terminal. Everything that types, logs, searches,
+        /// broadcasts or transfers bytes goes through this, so those features
+        /// skip the other kinds by construction rather than by remembering to.
+        var terminal: TerminalTab? {
+            if case .terminal(let pane) = self { return pane }
+            return nil
+        }
+
+        var id: UUID {
+            switch self {
+            case .terminal(let pane): return pane.id
+            case .vnc(let pane): return pane.id
+            case .rdp(let pane): return pane.id
+            case .web(let pane): return pane.id
+            }
+        }
+
+        var state: TerminalTab.State {
+            switch self {
+            case .terminal(let pane): return pane.state
+            case .vnc(let pane): return pane.state
+            case .rdp(let pane): return pane.state
+            case .web(let pane): return pane.state
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .terminal(let pane): return pane.title
+            case .vnc(let pane): return pane.title
+            case .rdp(let pane): return pane.title
+            case .web(let pane): return pane.title
+            }
+        }
+
+        func disconnect() {
+            switch self {
+            case .terminal(let pane): pane.disconnect()
+            case .vnc(let pane): pane.disconnect()
+            case .rdp(let pane): pane.disconnect()
+            case .web(let pane): pane.disconnect()
+            }
+        }
+
+        var objectWillChange: ObservableObjectPublisher {
+            switch self {
+            case .terminal(let pane): return pane.objectWillChange
+            case .vnc(let pane): return pane.objectWillChange
+            case .rdp(let pane): return pane.objectWillChange
+            case .web(let pane): return pane.objectWillChange
+            }
+        }
+    }
+
     enum Node {
-        case leaf(TerminalTab)
+        case leaf(PaneContent)
         /// A gap in the grid. The last row of an odd number of sessions holds
         /// one of these so the lone terminal keeps the SAME width as the ones
         /// above it instead of stretching across the window.
@@ -63,7 +134,7 @@ final class SessionTab: ObservableObject, Identifiable {
         self.web = nil
         self.isFileBrowserOnly = false
         let pane = TerminalTab(config: config, app: app)
-        root = .leaf(pane)
+        root = .leaf(.terminal(pane))
         focusedPaneID = pane.id
         register(pane)
         pane.connect()
@@ -82,7 +153,7 @@ final class SessionTab: ObservableObject, Identifiable {
         self.rdp = nil
         self.web = nil
         self.isFileBrowserOnly = false
-        root = .leaf(pane)
+        root = .leaf(.terminal(pane))
         focusedPaneID = pane.id
         register(pane)
     }
@@ -112,7 +183,7 @@ final class SessionTab: ObservableObject, Identifiable {
         self.isFileBrowserOnly = false
         // Placeholder leaf keeps the Node tree non-optional; it is never shown
         // for local tabs (ContentView renders localTerminal instead).
-        root = .leaf(TerminalTab(config: config, app: app))
+        root = .leaf(.terminal(TerminalTab(config: config, app: app)))
         childObserver = local.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -130,7 +201,7 @@ final class SessionTab: ObservableObject, Identifiable {
         self.web = nil
         self.isFileBrowserOnly = false
         // Placeholder leaf keeps the Node tree non-optional; never rendered.
-        root = .leaf(TerminalTab(config: config, app: app))
+        root = .leaf(.terminal(TerminalTab(config: config, app: app)))
         // Re-publish the VNC tab's changes: the tab chip's title and status dot
         // read through this object, and VNC state arrives asynchronously.
         childObserver = vncTab.objectWillChange.sink { [weak self] _ in
@@ -149,7 +220,7 @@ final class SessionTab: ObservableObject, Identifiable {
         self.rdp = rdpTab
         self.web = nil
         self.isFileBrowserOnly = false
-        root = .leaf(TerminalTab(config: config, app: app))
+        root = .leaf(.terminal(TerminalTab(config: config, app: app)))
         childObserver = rdpTab.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -167,7 +238,7 @@ final class SessionTab: ObservableObject, Identifiable {
         self.web = nil
         self.isFileBrowserOnly = true
         // Placeholder leaf keeps the Node tree non-optional; never rendered.
-        root = .leaf(TerminalTab(config: config, app: app))
+        root = .leaf(.terminal(TerminalTab(config: config, app: app)))
         // Shown straight away rather than behind the toolbar toggle: hiding it
         // would leave a tab with nothing in it at all.
         showFiles = true
@@ -183,7 +254,7 @@ final class SessionTab: ObservableObject, Identifiable {
         self.isFileBrowserOnly = false
         let webTab = WebTab(config: config, app: app)
         self.web = webTab
-        root = .leaf(TerminalTab(config: config, app: app))
+        root = .leaf(.terminal(TerminalTab(config: config, app: app)))
         childObserver = webTab.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -312,7 +383,9 @@ final class SessionTab: ObservableObject, Identifiable {
         if let rdp { return rdp.state }
         if let web { return web.state }
         if isFileBrowserOnly { return fileBrowserState }
-        let states = panes.map(\.state)
+        // Every leaf, not only the terminals: a tab holding a shell and a
+        // remote desktop is connected when either of them is.
+        let states = Self.contents(root).map(\.state)
         if states.contains(.connected) { return .connected }
         if states.contains(.connecting) { return .connecting }
         return states.first ?? .closed("no panes")
@@ -334,7 +407,7 @@ final class SessionTab: ObservableObject, Identifiable {
         let newPane = TerminalTab(config: paneConfig, app: app)
         register(newPane)
         root = Self.replacing(root, paneID: target.id) { leaf in
-            .split(axis: axis, id: UUID(), first: leaf, second: .leaf(newPane))
+            .split(axis: axis, id: UUID(), first: leaf, second: .leaf(.terminal(newPane)))
         }
         focusedPaneID = newPane.id
         newPane.connect()
@@ -372,7 +445,7 @@ final class SessionTab: ObservableObject, Identifiable {
         let existing = panes.filter { seen.insert($0.id).inserted }
         guard existing.count > 1 else { return }
         let rows = GridLayout.rows(for: existing.count).map { indices -> Node in
-            var cells = indices.map { Node.leaf(existing[$0]) }
+            var cells = indices.map { Node.leaf(.terminal(existing[$0])) }
             // Pad a short last row so its terminal keeps the same width as the
             // ones above rather than spanning the whole window.
             while cells.count < GridLayout.panesPerRow {
@@ -423,6 +496,66 @@ final class SessionTab: ObservableObject, Identifiable {
 
     /// Close one pane. Returns false when it was the last pane —
     /// the caller should close the whole tab instead.
+    /// Leaves of every kind, for chrome that only appears in a real split.
+    var paneCount: Int { Self.contents(root).count }
+
+    /// Close any leaf, terminal or not. Same rule as a terminal pane: the last
+    /// one cannot go, because a tab with nothing in it is not a tab.
+    func closeContent(_ content: PaneContent) -> Bool {
+        guard paneCount > 1 else { return false }
+        content.disconnect()
+        paneObservers[content.id] = nil
+        if let newRoot = Self.removing(root, paneID: content.id) {
+            root = newRoot
+        }
+        if focusedPaneID == content.id {
+            focusedPaneID = Self.contents(root).first?.id
+        }
+        settleLayout()
+        return true
+    }
+
+    /// Put a session of any kind beside the focused pane.
+    func splitFocused(_ axis: Axis, with session: SessionConfig) -> Bool {
+        guard let app, let target = focusedPaneID ?? Self.contents(root).first?.id,
+              !isSinglePane else { return false }
+        let content: PaneContent
+        switch session.sessionKind {
+        case .vnc: content = .vnc(VNCTab(config: session, app: app))
+        case .rdp: content = .rdp(RDPTab(config: session, app: app))
+        case .web: content = .web(WebTab(config: session, app: app))
+        default:
+            splitFocused(axis, config: session)
+            return true
+        }
+        register(content)
+        root = Self.replacing(root, paneID: target) { leaf in
+            .split(axis: axis, id: UUID(), first: leaf, second: .leaf(content))
+        }
+        focusedPaneID = content.id
+        connect(content)
+        settleLayout()
+        return true
+    }
+
+    private func connect(_ content: PaneContent) {
+        switch content {
+        case .terminal(let pane): pane.connect()
+        case .vnc(let pane): pane.connect()
+        case .rdp(let pane): pane.connect()
+        case .web(let pane): pane.start()
+        }
+    }
+
+    /// Re-publish a non-terminal leaf's changes, so the chip and the pane
+    /// chrome follow its state the way a terminal's do.
+    private func register(_ content: PaneContent) {
+        if let pane = content.terminal { return register(pane) }
+        paneObservers[content.id] = content.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+    }
+
     func closePane(_ pane: TerminalTab) -> Bool {
         guard panes.count > 1 else { return false }
         pane.disconnect()
@@ -604,21 +737,27 @@ final class SessionTab: ObservableObject, Identifiable {
     }
 
     private static func collect(_ node: Node) -> [TerminalTab] {
+        contents(node).compactMap(\.terminal)
+    }
+
+    /// Every leaf, whatever it holds. `collect` narrows this to the terminals,
+    /// which is what the byte-shovelling features want.
+    static func contents(_ node: Node) -> [PaneContent] {
         switch node {
-        case .leaf(let pane):
-            return [pane]
+        case .leaf(let content):
+            return [content]
         case .empty:
             return []
         case .split(_, _, let first, let second):
-            return collect(first) + collect(second)
+            return contents(first) + contents(second)
         }
     }
 
     private static func replacing(_ node: Node, paneID: UUID,
                                   with transform: (Node) -> Node) -> Node {
         switch node {
-        case .leaf(let pane):
-            return pane.id == paneID ? transform(node) : node
+        case .leaf(let content):
+            return content.id == paneID ? transform(node) : node
         case .empty:
             return node
         case .split(let axis, let id, let first, let second):
@@ -632,8 +771,8 @@ final class SessionTab: ObservableObject, Identifiable {
     /// Returns nil when the node itself was the removed leaf.
     private static func removing(_ node: Node, paneID: UUID) -> Node? {
         switch node {
-        case .leaf(let pane):
-            return pane.id == paneID ? nil : node
+        case .leaf(let content):
+            return content.id == paneID ? nil : node
         case .empty:
             // A gap only exists to hold a space next to a real pane. Once the
             // tree is rebuilt without that pane, the gap must go too, or the

@@ -33,7 +33,7 @@ swift build -c release
 
 APP=MacMoba.app
 BIN=.build/release/MacMoba
-VERSION=1.98
+VERSION=1.99
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

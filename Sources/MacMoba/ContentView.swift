@@ -138,10 +138,9 @@ struct SplitMenu: View {
     var body: some View {
         Menu {
             if let current = window.selectedTab, !current.isSinglePane {
-                // Panes are terminals, so both lists are SSH-only. Offering a
-                // VNC or RDP entry here produces a pane that can never render
-                // anything — it is not a split that happens to fail, it is a
-                // split that cannot exist.
+                // Moving an OPEN tab in still means terminals: adopting a live
+                // remote desktop into another tab's tree is a different job
+                // (its connection belongs to the tab it came from).
                 let others = window.tabs.filter { $0.id != current.id && !$0.isSinglePane }
                 if !others.isEmpty {
                     Section("Move Open Tab Here") {
@@ -156,7 +155,10 @@ struct SplitMenu: View {
                     Button("Duplicate Current Session") {
                         window.splitSelected(axis)
                     }
-                    ForEach(app.data.sessions.filter(\.sessionKind.fitsInSplitPane)) { session in
+                    // Every kind, not just terminals: a remote desktop beside a
+                    // shell is exactly what people ask splits for. Serial is the
+                    // one exception — one port, one connection.
+                    ForEach(app.data.sessions.filter { $0.sessionKind != .serial }) { session in
                         Button(session.name) {
                             window.splitWithNewConnection(session, axis: axis)
                         }
@@ -332,7 +334,7 @@ struct PaneNodeView: View {
 
     var body: some View {
         switch node {
-        case .leaf(let pane):
+        case .leaf(.terminal(let pane)):
             PaneLeafView(
                 pane: pane,
                 tab: tab,
@@ -340,6 +342,11 @@ struct PaneNodeView: View {
                 showChrome: tab.panes.count > 1,
                 onClose: { window.closePane(pane, in: tab) }
             )
+        case .leaf(let content):
+            // A remote desktop or a web page sharing the split with a shell.
+            // The chrome is the leaf's, the content is its own view — nothing
+            // here types, logs or broadcasts, which the type already says.
+            NonTerminalLeafView(content: content, tab: tab)
         case .empty:
             // The gap beside a lone terminal on the last row. Plain background
             // so it reads as "nothing here", not as a broken pane.
@@ -364,6 +371,48 @@ struct PaneNodeView: View {
                         .environmentObject(app).environmentObject(window))
                 }
             )
+        }
+    }
+}
+
+/// A leaf that is not a terminal: a remote desktop or a web page living in the
+/// split tree beside one. Deliberately thin — the close control comes from the
+/// pane it wraps, and everything byte-shaped (logging, search, ZMODEM,
+/// broadcast) simply does not apply to it.
+struct NonTerminalLeafView: View {
+    @EnvironmentObject var app: AppState
+    @EnvironmentObject var window: WindowState
+    let content: SessionTab.PaneContent
+    let tab: SessionTab
+
+    var body: some View {
+        Group {
+            switch content {
+            case .vnc(let vnc): VNCPaneView(tab: vnc)
+            case .rdp(let rdp): RDPPaneView(tab: rdp)
+            case .web(let web): WebPaneView(tab: web)
+            case .terminal: EmptyView()   // handled by PaneLeafView
+            }
+        }
+        .frame(minWidth: 150, minHeight: 100)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topTrailing) {
+            Button { window.closePaneContent(content, in: tab) } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white.opacity(0.6))
+            .padding(6)
+            .opacity(tab.paneCount > 1 ? 1 : 0)
+        }
+        .onTapGesture { tab.focusedPaneID = content.id }
+        .overlay {
+            if tab.focusedPaneID == content.id && tab.paneCount > 1 {
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(Color.accentColor, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
         }
     }
 }
