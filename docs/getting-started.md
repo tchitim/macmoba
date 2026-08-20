@@ -119,6 +119,37 @@ macmoba hooks install codex     # 印出 config.toml 片段讓你自己貼
 
 輸入法方面另有一點：MacMoba 送給遠端的一律是**實體鍵**（經 ASCII 鍵盤配置翻譯），不受本機選了什麼輸入法影響——組字是遠端那台自己的事。
 
+### 剪貼簿
+
+英數字兩個方向都自動同步，照常用 ⌘C／⌘V。**中文與其他非 Latin-1 字元不行**——那是 VNC 協定本身的限制，它的剪貼簿訊息只能承載 Latin-1。兩個補救各走不同的路：
+
+| 想做的事 | 按鍵 | 怎麼辦到的 |
+|---|---|---|
+| 把本機的中文貼到遠端 | **⌥⌘V** | 逐字打進去，用 X11 的 Unicode keysym |
+| 把遠端的內容抄回本機 | **⌥⌘C** | 走**同一台機器的 SSH 連線**執行 `pbpaste`（Linux 試 `xclip`／`xsel`） |
+
+⌥⌘C 需要保險箱裡有一條指向**同一個 host** 的 SSH 連線；找不到時它會告訴你現有的 SSH 連線指向哪些 host，方便你對齊。這兩個組合鍵**不會轉發給遠端**，所以擷取輸入時照樣能用。
+
+---
+
+## 傳檔
+
+**SFTP 面板**（工具列的資料夾鈕）：雙欄瀏覽、拖放上傳、拖出到 Finder 下載、Quick Look、chmod。
+
+**拖到終端機畫面**：SSH 分頁會出現兩個落區——左半 **Upload via SFTP**（上傳到面板目前的目錄），右半 **Send via ZMODEM**。
+
+**ZMODEM**（遠端需 `lrzsz`）：
+
+```bash
+# 下載：在遠端跑，MacMoba 自動接手，存到 ~/Downloads
+sz report.log
+
+# 上傳：Session → Send File (ZMODEM)…
+# 不必自己先跑 rz，MacMoba 會替你起；若你已經跑了，它會偵測到並跳過
+```
+
+`rz` 收到的檔案會落在**執行它時所在的目錄**。
+
 ---
 
 ## 自動更新
@@ -132,6 +163,8 @@ MacMoba 使用 [Sparkle](https://sparkle-project.org/)：預設每天檢查一�
 ## 工作階段還原
 
 關閉 App 時開著的分頁會被記住，下次啟動自動重新連線（可在**設定 → General** 關閉）。Mac 從睡眠喚醒後，睡眠期間斷掉的終端會自動重連；沒斷的則保持原狀，不會丟掉你的 scrollback。
+
+連線斷掉時，那個分頁會停在「Connection closed」：**Return 重新連線**、**Esc 關掉它**（分割狀態下只關那一格）。
 
 **目前無法還原遠端行程的執行狀態**——重新連線是一條新的 SSH 連線。要讓工作留在遠端，請搭配 `tmux`／`screen`，或改用 Mosh 連線。
 
@@ -152,8 +185,7 @@ MacMoba 使用 [Sparkle](https://sparkle-project.org/)：預設每天檢查一�
 - **僅 arm64**：Intel Mac 無法執行
 - **不支援 RSA 金鑰**：底層 SwiftNIO SSH 只支援 ed25519 / ECDSA，請用 `ssh-keygen -t ed25519`
 - **不支援 ssh-agent 與 keyboard-interactive（2FA/OTP）**：上游函式庫尚未提供
-- **X11 轉發**需另外安裝 XQuartz，並開啟 TCP 監聽
-- **ZMODEM 需要遠端裝 `lrzsz`**。下載：在遠端跑 `sz <檔案>`，MacMoba 自動接手並存到 `~/Downloads`。上傳：**Session → Send File (ZMODEM)…**（或把檔案拖到終端機畫面的 ZMODEM 落區）——**不需要自己先跑 `rz`**，MacMoba 會替你起；若你已經跑了，它會偵測到並跳過。`rz` 收到的檔案會落在**執行它時所在的目錄**
+- **X11 轉發**需安裝 XQuartz 並開啟 TCP 監聽（`defaults write org.xquartz.X11 nolisten_tcp -bool false`，之後重登入）。底層 SwiftNIO SSH 沒有原生 x11 channel，MacMoba 改用等效的 remote forward：請伺服器把 `localhost:600N` 的連線送回這台 Mac，並自動設好遠端的 `DISPLAY`
 - **Session log 是明文**：畫面上出現的機密都會寫進去（檔案 0600）
-- **VNC 剪貼簿只能傳 Latin-1**：這是 RFB 協定本身的限制，中文、破折號、emoji 都過不去（英數字則正常，兩個方向都自動同步）。要把**中文貼到遠端**請用 **⌥⌘V**——MacMoba 會把剪貼簿內容**逐字打進**遠端，用的是 X11 的 Unicode keysym，所以不受那個限制。
-- **從遠端桌面複製回本機**：macOS 的 VNC 伺服器**從不回送剪貼簿**，協定也沒有辦法去問。改用 **⌥⌘C**——MacMoba 會走**同一台機器的 SSH 連線**執行 `pbpaste`（Linux 則試 `xclip`／`xsel`），把結果放到本機剪貼簿。前提是保險箱裡有一條指向**同一個 host** 的 SSH 連線。
+- **VNC 剪貼簿只能傳 Latin-1**：協定本身的限制，中文過不去；改用 ⌥⌘V／⌥⌘C（見上面「剪貼簿」）
+- **隧道只能掛在 SSH 或 Mosh 連線上**：隧道是一條 SSH channel，遠端桌面與序列埠承載不了，所以選單裡不會列出它們
