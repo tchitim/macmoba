@@ -294,6 +294,20 @@ private struct CaptureHint: View {
                     .background(.black.opacity(0.7), in: Capsule())
                     .padding(.top, 10)
                     .transition(.opacity)
+            } else if bridge.isGrabbed {
+                // What is left after the sentence fades. While input is
+                // captured the local cursor is parked and hidden, so clicking
+                // the sidebar does nothing — the click goes to the remote.
+                // Without a standing sign, the app looks broken rather than
+                // busy, which is exactly how it was reported.
+                Image(systemName: "lock.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .padding(5)
+                    .background(.black.opacity(0.55), in: Circle())
+                    .padding(.top, 6)
+                    .help("Input is captured — \(bridge.releaseHint)")
+                    .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: showing)
