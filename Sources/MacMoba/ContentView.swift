@@ -396,6 +396,10 @@ struct NonTerminalLeafView: View {
         }
         .frame(minWidth: 150, minHeight: 100)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Same reason as a terminal pane: the focus ring needs its own room
+        // rather than covering the edge of the remote screen.
+        .padding(tab.paneCount > 1 ? 4 : 0)
+        .background(Color.black)
         .overlay(alignment: .topTrailing) {
             Button { window.closePaneContent(content, in: tab) } label: {
                 Image(systemName: "xmark.circle.fill")
@@ -446,6 +450,10 @@ struct PaneLeafView: View {
             // App-generated status lives here, not in the scrollback (P0-2).
             PaneStatusBar(pane: pane)
         }
+            // The borders below are drawn over the pane, so without room of
+            // their own they land on the first column of text — the leading
+            // bracket of a prompt disappears under the focus ring.
+            .padding(showChrome ? 4 : 0)
             .background(Color(nsColor: themeBackground))
             // File drop (P2-9). The outer target only detects hovering; the
             // overlay's zones take the actual drop.
