@@ -147,14 +147,37 @@ final class SessionTab: ObservableObject, Identifiable {
     /// The counterpart to `merge`: used when panes are split back out into
     /// separate tabs. The pane is adopted as-is — no reconnect, no lost
     /// scrollback.
-    init(adopting pane: TerminalTab, app: AppState) {
-        self.config = pane.config
+    convenience init(adopting pane: TerminalTab, app: AppState) {
+        self.init(adopting: .terminal(pane), config: pane.config, app: app)
+    }
+
+    /// A tab built around a pane of any kind that is already connected — the
+    /// counterpart to `merge`, used when a split is broken back apart.
+    init(adopting content: PaneContent, config: SessionConfig, app: AppState) {
+        self.config = config
         self.app = app
         self.localTerminal = nil
         self.isFileBrowserOnly = false
-        root = .leaf(.terminal(pane))
-        focusedPaneID = pane.id
-        register(pane)
+        root = .leaf(content)
+        focusedPaneID = content.id
+        register(content)
+    }
+
+    /// Take any leaf out of this tab's tree WITHOUT disconnecting it.
+    func detach(_ content: PaneContent) -> Bool {
+        guard paneCount > 1, let newRoot = Self.removing(root, paneID: content.id) else {
+            return false
+        }
+        paneObservers[content.id] = nil
+        root = newRoot
+        if focusedPaneID == content.id { focusedPaneID = Self.contents(root).first?.id }
+        settleLayout()
+        return true
+    }
+
+    /// The config a detached leaf should carry into its own tab.
+    func config(of content: PaneContent) -> SessionConfig {
+        content.terminal?.config ?? config
     }
 
     /// Take a pane out of this tab's tree WITHOUT disconnecting it, so it can

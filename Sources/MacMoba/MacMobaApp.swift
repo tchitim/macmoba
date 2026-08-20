@@ -254,8 +254,9 @@ struct MacMobaCommands: Commands {
             Button("Move Panes to Separate Tabs") {
                 if let tab = window?.selectedTab { window?.ungroupPanes(of: tab) }
             }
-            .disabled((window?.selectedTab?.panes.count ?? 0) < 2
-                      || !(window?.selectedTab?.hasTerminalPanes ?? false))
+            // Counted over every pane: a shell beside a remote desktop is two
+            // panes to break apart, even though only one of them is a terminal.
+            .disabled((window?.selectedTab?.paneCount ?? 0) < 2)
             Button("Close Pane") { window?.closeFocusedPane() }
                 .keyboardShortcut("w", modifiers: [.command, .option])
                 .disabled(window?.selectedTab == nil)

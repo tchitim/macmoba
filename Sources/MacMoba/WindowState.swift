@@ -316,24 +316,28 @@ final class WindowState: ObservableObject {
         gatheredPaneIDs = []
         for tab in tabs where tab.hasTerminalPanes {
             for pane in tab.panes where ids.contains(pane.id) {
-                movePaneToOwnTab(pane, from: tab)
+                movePaneToOwnTab(.terminal(pane), from: tab)
             }
         }
     }
 
     /// Split every pane of `tab` out into its own tab, keeping one behind.
+    /// Break a split apart: every pane becomes its own tab, connections intact.
+    /// Every pane, not every terminal — a remote desktop sharing the split is
+    /// one of the things you are trying to separate.
     func ungroupPanes(of tab: SessionTab) {
-        guard tab.hasTerminalPanes else { return }
-        for pane in tab.panes.dropFirst() {
-            movePaneToOwnTab(pane, from: tab)
+        for content in SessionTab.contents(tab.root).dropFirst() {
+            movePaneToOwnTab(content, from: tab)
         }
         gatheredPaneIDs = []
     }
 
     @discardableResult
-    private func movePaneToOwnTab(_ pane: TerminalTab, from tab: SessionTab) -> SessionTab? {
-        guard tab.detach(pane) else { return nil }
-        let newTab = SessionTab(adopting: pane, app: app)
+    private func movePaneToOwnTab(_ content: SessionTab.PaneContent,
+                                  from tab: SessionTab) -> SessionTab? {
+        let config = tab.config(of: content)
+        guard tab.detach(content) else { return nil }
+        let newTab = SessionTab(adopting: content, config: config, app: app)
         tabs.append(newTab)
         return newTab
     }

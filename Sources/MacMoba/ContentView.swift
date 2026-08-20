@@ -151,6 +151,15 @@ struct SplitMenu: View {
                         }
                     }
                 }
+                if current.paneCount > 1 {
+                    Section {
+                        // Where someone looks for "undo the split" is the same
+                        // menu that made it, not a different one.
+                        Button("Break Apart into Tabs") {
+                            window.ungroupPanes(of: current)
+                        }
+                    }
+                }
                 Section("New Connection") {
                     Button("Duplicate Current Session") {
                         window.splitSelected(axis)
