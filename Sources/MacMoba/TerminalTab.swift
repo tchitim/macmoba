@@ -782,6 +782,9 @@ final class ZModemBox: @unchecked Sendable {
     private var receiver: ZModemReceiver?
     private var sender: ZModemSender?
     private var tail: [UInt8] = []
+    /// Set while a receiver on the remote is announcing itself — someone ran
+    /// `rz` by hand. Typing `rz` at it would feed the word into the transfer.
+    private var remoteReceiverWaiting = false
     var onComplete: (([ZModemReceiver.ReceivedFile]) -> Void)?
     var onSendComplete: ((String) -> Void)?
 
@@ -792,7 +795,12 @@ final class ZModemBox: @unchecked Sendable {
         guard sender == nil, receiver == nil else { return }
         let s = ZModemSender(name: name, data: data)
         sender = s
-        write(Array("rz\r".utf8))          // start the receiver on the remote
+        // Normally the remote has no receiver yet and one is started here, the
+        // way MobaXterm does it. But if the user ran `rz` themselves — the
+        // obvious thing to try — it is already waiting, and typing the command
+        // at it would arrive as transfer data and wedge both ends.
+        if !remoteReceiverWaiting { write(Array("rz\r".utf8)) }
+        remoteReceiverWaiting = false
         let initial = s.start()
         if !initial.isEmpty { write(initial) }
     }
@@ -833,6 +841,10 @@ final class ZModemBox: @unchecked Sendable {
             tail = []
             return true
         }
+        // An idle stream carrying ZRINIT means someone started `rz` by hand.
+        // Remembered, not consumed: it is still terminal output until a
+        // transfer actually begins.
+        if ZModem.receiverIsWaiting(in: combined) { remoteReceiverWaiting = true }
         tail = Array(combined.suffix(8))
         return false
     }

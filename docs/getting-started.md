@@ -153,6 +153,7 @@ MacMoba 使用 [Sparkle](https://sparkle-project.org/)：預設每天檢查一�
 - **不支援 RSA 金鑰**：底層 SwiftNIO SSH 只支援 ed25519 / ECDSA，請用 `ssh-keygen -t ed25519`
 - **不支援 ssh-agent 與 keyboard-interactive（2FA/OTP）**：上游函式庫尚未提供
 - **X11 轉發**需另外安裝 XQuartz，並開啟 TCP 監聽
+- **ZMODEM 需要遠端裝 `lrzsz`**。下載：在遠端跑 `sz <檔案>`，MacMoba 自動接手並存到 `~/Downloads`。上傳：**Session → Send File (ZMODEM)…**（或把檔案拖到終端機畫面的 ZMODEM 落區）——**不需要自己先跑 `rz`**，MacMoba 會替你起；若你已經跑了，它會偵測到並跳過。`rz` 收到的檔案會落在**執行它時所在的目錄**
 - **Session log 是明文**：畫面上出現的機密都會寫進去（檔案 0600）
 - **VNC 剪貼簿只能傳 Latin-1**：這是 RFB 協定本身的限制，中文、破折號、emoji 都過不去（英數字則正常，兩個方向都自動同步）。要把**中文貼到遠端**請用 **⌥⌘V**——MacMoba 會把剪貼簿內容**逐字打進**遠端，用的是 X11 的 Unicode keysym，所以不受那個限制。
 - **從遠端桌面複製回本機**：macOS 的 VNC 伺服器**從不回送剪貼簿**，協定也沒有辦法去問。改用 **⌥⌘C**——MacMoba 會走**同一台機器的 SSH 連線**執行 `pbpaste`（Linux 則試 `xclip`／`xsel`），把結果放到本機剪貼簿。前提是保險箱裡有一條指向**同一個 host** 的 SSH 連線。

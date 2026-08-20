@@ -213,6 +213,19 @@ public enum ZModem {
         return idx
     }
 
+    /// True when the stream carries a ZRINIT — a receiver on the other end
+    /// announcing that it is waiting, which is what `rz` sends over and over
+    /// while it sits there.
+    ///
+    /// Worth telling apart from a download's ZRQINIT: a send normally starts by
+    /// typing `rz` on the remote, and typing it at an `rz` that is ALREADY
+    /// running feeds the word "rz" into the transfer as data and wedges both
+    /// ends. Knowing one is waiting means not typing it.
+    public static func receiverIsWaiting(in bytes: [UInt8]) -> Bool {
+        let marker: [UInt8] = [ZDLE, ZHEX, 0x30, 0x31]   // ZDLE 'B' '0' '1'
+        return firstIndex(of: marker, in: bytes) != nil
+    }
+
     private static func firstIndex(of needle: [UInt8], in haystack: [UInt8]) -> Int? {
         guard !needle.isEmpty, haystack.count >= needle.count else { return nil }
         for start in 0...(haystack.count - needle.count) {
