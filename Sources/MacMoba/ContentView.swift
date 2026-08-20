@@ -137,11 +137,11 @@ struct SplitMenu: View {
 
     var body: some View {
         Menu {
-            if let current = window.selectedTab, !current.isSinglePane {
+            if let current = window.selectedTab, current.canSplit {
                 // Moving an OPEN tab in still means terminals: adopting a live
                 // remote desktop into another tab's tree is a different job
                 // (its connection belongs to the tab it came from).
-                let others = window.tabs.filter { $0.id != current.id && !$0.isSinglePane }
+                let others = window.tabs.filter { $0.id != current.id && $0.hasTerminalPanes }
                 if !others.isEmpty {
                     Section("Move Open Tab Here") {
                         ForEach(others) { other in
@@ -218,7 +218,7 @@ struct FilesToggle: View {
     @EnvironmentObject var window: WindowState
 
     var body: some View {
-        if let tab = window.selectedTab, !tab.isSinglePane {
+        if let tab = window.selectedTab, tab.hasTerminalPanes {
             FilesToggleInner(tab: tab)
         } else {
             Button {} label: { Label("Files", systemImage: "folder") }
@@ -278,15 +278,6 @@ struct TerminalPane: View {
             LocalTerminalHostView(tab: local)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: app.theme.backgroundColor))
-                .id(tab.id)
-        } else if let vnc = tab.vnc {
-            VNCPaneView(tab: vnc)
-                .id(tab.id)
-        } else if let rdp = tab.rdp {
-            RDPPaneView(tab: rdp)
-                .id(tab.id)
-        } else if let web = tab.web {
-            WebPaneView(tab: web)
                 .id(tab.id)
         } else if tab.isFileBrowserOnly {
             // The panel fills the tab: there is no terminal beside it, so it

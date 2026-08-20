@@ -275,11 +275,11 @@ final class WindowState: ObservableObject {
     /// Keyboard split (⌘D/⇧⌘D): pull the next open tab into the split when
     /// there is one; only duplicate when this is the sole tab.
     func smartSplit(_ axis: Axis) {
-        guard let tab = selectedTab, !tab.isSinglePane else { return }
+        guard let tab = selectedTab, tab.canSplit else { return }
         // Only terminal tabs can be moved in; a VNC/RDP tab next door is not a
         // candidate, so fall back to duplicating this pane rather than merging
         // something that cannot be a pane.
-        if let other = tabs.first(where: { $0.id != tab.id && !$0.isSinglePane }) {
+        if let other = tabs.first(where: { $0.id != tab.id && $0.hasTerminalPanes }) {
             mergeTab(other, into: tab, axis: axis)
         } else {
             tab.splitFocused(axis)
@@ -314,7 +314,7 @@ final class WindowState: ObservableObject {
         guard !gatheredPaneIDs.isEmpty else { return }
         let ids = gatheredPaneIDs
         gatheredPaneIDs = []
-        for tab in tabs where !tab.isSinglePane {
+        for tab in tabs where tab.hasTerminalPanes {
             for pane in tab.panes where ids.contains(pane.id) {
                 movePaneToOwnTab(pane, from: tab)
             }
@@ -323,7 +323,7 @@ final class WindowState: ObservableObject {
 
     /// Split every pane of `tab` out into its own tab, keeping one behind.
     func ungroupPanes(of tab: SessionTab) {
-        guard !tab.isSinglePane else { return }
+        guard tab.hasTerminalPanes else { return }
         for pane in tab.panes.dropFirst() {
             movePaneToOwnTab(pane, from: tab)
         }
@@ -340,13 +340,13 @@ final class WindowState: ObservableObject {
 
     @discardableResult
     func gatherTerminalsIntoGrid() -> SessionTab? {
-        let terminals = tabs.filter { !$0.isSinglePane }
+        let terminals = tabs.filter(\.hasTerminalPanes)
         guard terminals.count > 1 || (terminals.first?.panes.count ?? 0) > 1 else {
             terminals.first?.tileIntoGrid()
             return terminals.first
         }
         // The selected tab if it is a terminal, so the view does not jump.
-        let destination = (selectedTab.flatMap { $0.isSinglePane ? nil : $0 })
+        let destination = (selectedTab.flatMap { $0.hasTerminalPanes ? $0 : nil })
             ?? terminals[0]
         for source in terminals where source.id != destination.id {
             // Remembered so switching MultiExec off can hand them back. Only
@@ -369,7 +369,7 @@ final class WindowState: ObservableObject {
         // local-shell tab keeps its real content outside the tree, so merging it
         // would adopt the unused placeholder leaf — a blank pane — and drop the
         // live connection on the floor when the source tab is removed below.
-        guard !source.isSinglePane, !dest.isSinglePane else { return }
+        guard source.hasTerminalPanes, dest.hasTerminalPanes else { return }
         let node = source.root
         let panes = source.panes
         source.prepareForMerge()
@@ -401,7 +401,7 @@ final class WindowState: ObservableObject {
     // MARK: - Search / logging
 
     func toggleSearch() {
-        guard let tab = selectedTab, !tab.isSinglePane else { return }
+        guard let tab = selectedTab, tab.canSplit else { return }
         tab.showSearch.toggle()
         if tab.showSearch {
             tab.search.attach(to: tab.focusedPane)
@@ -413,7 +413,7 @@ final class WindowState: ObservableObject {
 
     /// Search only exists for tabs that have a terminal pane tree.
     private var paneSearch: TerminalSearchModel? {
-        guard let tab = selectedTab, !tab.isSinglePane else { return nil }
+        guard let tab = selectedTab, tab.hasTerminalPanes else { return nil }
         return tab.search
     }
 
@@ -424,7 +424,7 @@ final class WindowState: ObservableObject {
         // Not merely a disabled menu item: on a VNC/RDP tab `focusedPane` is the
         // placeholder leaf, so this would open a log file for a terminal that
         // never receives a byte.
-        guard let tab = selectedTab, !tab.isSinglePane else { return }
+        guard let tab = selectedTab, tab.hasTerminalPanes else { return }
         tab.focusedPane?.toggleLogging()
     }
 

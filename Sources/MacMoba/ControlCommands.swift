@@ -206,7 +206,7 @@ extension AppState {
             tab = windows.first?.selectedTab ?? tabs.first
         }
         guard let tab else { return .failure("no tab matches “\(spec ?? "")”") }
-        guard !tab.isSinglePane, let pane = tab.focusedPane else {
+        guard tab.hasTerminalPanes, let pane = tab.focusedPane else {
             return .failure("tab “\(tab.title)” has no terminal pane")
         }
         return .success(pane)

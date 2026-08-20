@@ -633,9 +633,10 @@ final class AppState: ObservableObject {
 
     /// Every SSH pane in every window that MultiExec could write to.
     /// Local shell tabs are deliberately absent: broadcast has never included
-    /// them, because their placeholder pane is not a connection.
+    /// them. Remote desktops are absent for a better reason — `panes` is the
+    /// terminals, so there is nothing there to type into.
     var broadcastCandidates: [TerminalTab] {
-        allTabs.filter { !$0.isSinglePane }.flatMap(\.panes)
+        allTabs.filter(\.hasTerminalPanes).flatMap(\.panes)
     }
 
     /// The panes a keystroke actually reaches — connected, and still ticked.

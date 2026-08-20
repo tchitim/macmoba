@@ -170,12 +170,12 @@ struct MacMobaCommands: Commands {
             // VNC/RDP tab `focusedPane` is the unused placeholder leaf, so this
             // used to start logging a terminal that is not connected to
             // anything — an empty log file, and a menu item stuck on "Stop".
-            .disabled(window?.selectedTab?.isSinglePane ?? true)
+            .disabled(!(window?.selectedTab?.hasTerminalPanes ?? false))
             Button("Open Logs Folder") {
                 NSWorkspace.shared.open(SessionLogger.directory)
             }
             Button("Send File (ZMODEM)…") { window?.sendFileViaZModem() }
-                .disabled(window?.selectedTab?.isSinglePane ?? true)
+                .disabled(!(window?.selectedTab?.hasTerminalPanes ?? false))
             Divider()
             Button("Jump to Attention") { window?.jumpToAttention() }
                 .keyboardShortcut("u", modifiers: [.command, .option])
@@ -194,13 +194,13 @@ struct MacMobaCommands: Commands {
             // menu from claiming otherwise.
             Button("Find…") { window?.toggleSearch() }
                 .keyboardShortcut("f", modifiers: [.command])
-                .disabled(window?.selectedTab?.isSinglePane ?? true)
+                .disabled(!(window?.selectedTab?.hasTerminalPanes ?? false))
             Button("Find Next") { window?.findNext() }
                 .keyboardShortcut("g", modifiers: [.command])
-                .disabled(window?.selectedTab?.isSinglePane ?? true)
+                .disabled(!(window?.selectedTab?.hasTerminalPanes ?? false))
             Button("Find Previous") { window?.findPrevious() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
-                .disabled(window?.selectedTab?.isSinglePane ?? true)
+                .disabled(!(window?.selectedTab?.hasTerminalPanes ?? false))
         }
         // ⌃⌘n rather than ⌘n or ⌃n: plain ⌃-digit is a control character
         // the terminal should keep receiving, and ⌘-digit is what people
@@ -241,21 +241,21 @@ struct MacMobaCommands: Commands {
             // rather than silently doing nothing.
             Button("Split Right") { window?.smartSplit(.horizontal) }
                 .keyboardShortcut("d", modifiers: [.command])
-                .disabled(window?.selectedTab?.isSinglePane ?? true)
+                .disabled(!(window?.selectedTab?.hasTerminalPanes ?? false))
             Button("Split Down") { window?.smartSplit(.vertical) }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
-                .disabled(window?.selectedTab?.isSinglePane ?? true)
+                .disabled(!(window?.selectedTab?.hasTerminalPanes ?? false))
             Button("Tile Panes") {
                 window?.selectedTab?.tileIntoGrid()
             }
             .keyboardShortcut("t", modifiers: [.command, .option])
             .disabled((window?.selectedTab?.panes.count ?? 0) < 2
-                      || (window?.selectedTab?.isSinglePane ?? true))
+                      || !(window?.selectedTab?.hasTerminalPanes ?? false))
             Button("Move Panes to Separate Tabs") {
                 if let tab = window?.selectedTab { window?.ungroupPanes(of: tab) }
             }
             .disabled((window?.selectedTab?.panes.count ?? 0) < 2
-                      || (window?.selectedTab?.isSinglePane ?? true))
+                      || !(window?.selectedTab?.hasTerminalPanes ?? false))
             Button("Close Pane") { window?.closeFocusedPane() }
                 .keyboardShortcut("w", modifiers: [.command, .option])
                 .disabled(window?.selectedTab == nil)

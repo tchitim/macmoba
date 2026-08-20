@@ -92,14 +92,19 @@ final class SessionTab: ObservableObject, Identifiable {
     let config: SessionConfig
     /// Local shell tab (MobaXterm-style); nil for SSH tabs.
     let localTerminal: LocalTerminalTab?
-    /// VNC tab; nil for every other kind. Mirrors localTerminal: a whole-tab
-    /// alternative to the SSH pane tree rather than a pane inside it.
-    let vnc: VNCTab?
-    /// RDP tab; same arrangement as vnc.
-    let rdp: RDPTab?
-    /// Web tab: a page reached through an SSH session. Like vnc/rdp it owns
-    /// the whole tab rather than living in the pane tree.
-    let web: WebTab?
+    /// A remote desktop or web page in this tab, if there is one. Derived from
+    /// the tree rather than stored beside it: a tab can now hold a shell and a
+    /// desktop at once, so "the tab's VNC" is a question about its panes, not a
+    /// second place where the truth lives.
+    var vnc: VNCTab? {
+        Self.contents(root).lazy.compactMap { if case .vnc(let v) = $0 { return v } else { return nil } }.first
+    }
+    var rdp: RDPTab? {
+        Self.contents(root).lazy.compactMap { if case .rdp(let v) = $0 { return v } else { return nil } }.first
+    }
+    var web: WebTab? {
+        Self.contents(root).lazy.compactMap { if case .web(let v) = $0 { return v } else { return nil } }.first
+    }
     /// True for a tab that is nothing but a file browser (FTP). Like vnc/rdp
     /// it has no pane tree, so splits, broadcast, logging and search do not
     /// apply — but unlike them the browser panel is the whole content, not an
@@ -129,9 +134,6 @@ final class SessionTab: ObservableObject, Identifiable {
         self.config = config
         self.app = app
         self.localTerminal = nil
-        self.vnc = nil
-        self.rdp = nil
-        self.web = nil
         self.isFileBrowserOnly = false
         let pane = TerminalTab(config: config, app: app)
         root = .leaf(.terminal(pane))
@@ -149,9 +151,6 @@ final class SessionTab: ObservableObject, Identifiable {
         self.config = pane.config
         self.app = app
         self.localTerminal = nil
-        self.vnc = nil
-        self.rdp = nil
-        self.web = nil
         self.isFileBrowserOnly = false
         root = .leaf(.terminal(pane))
         focusedPaneID = pane.id
@@ -177,9 +176,6 @@ final class SessionTab: ObservableObject, Identifiable {
         self.app = app
         let local = LocalTerminalTab(app: app)
         self.localTerminal = local
-        self.vnc = nil
-        self.rdp = nil
-        self.web = nil
         self.isFileBrowserOnly = false
         // Placeholder leaf keeps the Node tree non-optional; it is never shown
         // for local tabs (ContentView renders localTerminal instead).
@@ -195,18 +191,11 @@ final class SessionTab: ObservableObject, Identifiable {
         self.config = config
         self.app = app
         self.localTerminal = nil
-        let vncTab = VNCTab(config: config, app: app)
-        self.vnc = vncTab
-        self.rdp = nil
-        self.web = nil
         self.isFileBrowserOnly = false
-        // Placeholder leaf keeps the Node tree non-optional; never rendered.
-        root = .leaf(.terminal(TerminalTab(config: config, app: app)))
-        // Re-publish the VNC tab's changes: the tab chip's title and status dot
-        // read through this object, and VNC state arrives asynchronously.
-        childObserver = vncTab.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }
+        let vncTab = VNCTab(config: config, app: app)
+        root = .leaf(.vnc(vncTab))
+        focusedPaneID = vncTab.id
+        register(.vnc(vncTab))
         vncTab.connect()
     }
 
@@ -215,15 +204,11 @@ final class SessionTab: ObservableObject, Identifiable {
         self.config = config
         self.app = app
         self.localTerminal = nil
-        self.vnc = nil
-        let rdpTab = RDPTab(config: config, app: app)
-        self.rdp = rdpTab
-        self.web = nil
         self.isFileBrowserOnly = false
-        root = .leaf(.terminal(TerminalTab(config: config, app: app)))
-        childObserver = rdpTab.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }
+        let rdpTab = RDPTab(config: config, app: app)
+        root = .leaf(.rdp(rdpTab))
+        focusedPaneID = rdpTab.id
+        register(.rdp(rdpTab))
         rdpTab.connect()
     }
 
@@ -233,9 +218,6 @@ final class SessionTab: ObservableObject, Identifiable {
         self.config = config
         self.app = app
         self.localTerminal = nil
-        self.vnc = nil
-        self.rdp = nil
-        self.web = nil
         self.isFileBrowserOnly = true
         // Placeholder leaf keeps the Node tree non-optional; never rendered.
         root = .leaf(.terminal(TerminalTab(config: config, app: app)))
@@ -249,24 +231,19 @@ final class SessionTab: ObservableObject, Identifiable {
         self.config = config
         self.app = app
         self.localTerminal = nil
-        self.vnc = nil
-        self.rdp = nil
         self.isFileBrowserOnly = false
         let webTab = WebTab(config: config, app: app)
-        self.web = webTab
-        root = .leaf(.terminal(TerminalTab(config: config, app: app)))
-        childObserver = webTab.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }
+        root = .leaf(.web(webTab))
+        focusedPaneID = webTab.id
+        register(.web(webTab))
     }
 
     // MARK: - Pane access
 
-    /// ⚠️ For a VNC, RDP or local-shell tab this is **not** empty: those tabs
-    /// keep a never-connected placeholder leaf so `root` can be non-optional,
-    /// and it shows up here. Check `isSinglePane` before treating the result as
-    /// real terminals — several bugs have come from not doing so (splitting into
-    /// an RDP tab, merging one away, logging a pane that receives no bytes).
+    /// The terminals among the leaves — which may be none, in a tab holding
+    /// only a remote desktop. There is no placeholder any more: a leaf holds
+    /// what it says it holds, so this can no longer hand back a terminal that
+    /// was never connected to anything.
     var panes: [TerminalTab] {
         Self.collect(root)
     }
@@ -279,11 +256,12 @@ final class SessionTab: ObservableObject, Identifiable {
         return all.first { $0.id == focusedPaneID } ?? all.first
     }
 
-    /// ⚠️ Same caveat as `panes`: on a single-pane tab this returns the
-    /// placeholder, not nil.
+    /// The focused terminal, or nil when the focus is on a remote desktop —
+    /// which is what logging, search and ZMODEM should see, rather than being
+    /// quietly handed a different pane than the one being looked at.
     var focusedPane: TerminalTab? {
-        let all = panes
-        return all.first { $0.id == focusedPaneID } ?? all.first
+        if let focused = focusedContent { return focused.terminal }
+        return panes.first
     }
 
     var isLocal: Bool { localTerminal != nil }
@@ -309,9 +287,19 @@ final class SessionTab: ObservableObject, Identifiable {
     var isVNC: Bool { vnc != nil }
     var isRDP: Bool { rdp != nil }
     /// True when this tab has no SSH pane tree, so splits/SFTP/logging do not apply.
+    /// No pane tree at all: a local shell or a bare file browser. Everything
+    /// else — including a remote desktop — is one or more leaves now.
     var isSinglePane: Bool {
-        localTerminal != nil || vnc != nil || rdp != nil || web != nil || isFileBrowserOnly
+        localTerminal != nil || isFileBrowserOnly
     }
+
+    /// Whether anything here shovels bytes. What logging, search, ZMODEM,
+    /// transfer and broadcast actually need — a question `isSinglePane` used to
+    /// answer by accident, back when every leaf was a terminal.
+    var hasTerminalPanes: Bool { !panes.isEmpty }
+
+    /// Whether a pane can be put beside what is here.
+    var canSplit: Bool { !isSinglePane }
 
     var title: String {
         if let localTerminal { return localTerminal.title }
@@ -414,8 +402,10 @@ final class SessionTab: ObservableObject, Identifiable {
     /// Split the focused pane with a NEW connection. By default duplicates the
     /// focused pane's session; pass a config to connect somewhere else.
     func splitFocused(_ axis: Axis, config newConfig: SessionConfig? = nil) {
-        guard let app, let target = focusedPane else { return }
-        let paneConfig = newConfig ?? target.config
+        // The pane being split may not be a terminal — splitting a shell INTO a
+        // remote desktop tab is the same gesture from the other side.
+        guard let app, let target = focusedContent else { return }
+        let paneConfig = newConfig ?? target.terminal?.config ?? config
         // A pane is a terminal, so it can only ever hold an SSH session. Handed
         // a VNC or RDP config it would open *SSH* to the remote-desktop port and
         // sit there connecting forever, which reads as a blank pane. The menus
