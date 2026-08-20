@@ -1085,9 +1085,15 @@ struct TunnelEditView: View {
                     }
                     .pickerStyle(.radioGroup)
                     Picker("Via session", selection: $sessionId) {
-                        ForEach(app.data.sessions) { s in
+                        ForEach(tunnelHosts) { s in
                             Text(s.name).tag(s.id)
                         }
+                    }
+                    if tunnelHosts.isEmpty {
+                        Text("A tunnel is carried by an SSH connection, and there is no "
+                             + "SSH or Mosh session to carry it.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
                     TextField(type == "remote" ? "Port on server" : "Local port",
                               value: $bindPort, format: .number.grouping(.never))
@@ -1121,16 +1127,26 @@ struct TunnelEditView: View {
         .onAppear(perform: load)
     }
 
+    /// Only sessions that speak SSH: a remote desktop or a serial line cannot
+    /// carry a forward, and offering them invites a tunnel that never starts.
+    private var tunnelHosts: [SessionConfig] {
+        TunnelHosts.eligible(in: app.data.sessions)
+    }
+
     private func load() {
         if let t = original {
             name = t.name
             type = t.type
-            sessionId = t.sessionId
+            // A tunnel saved before this was filtered may point at something
+            // that cannot carry it. Blank it rather than show an empty picker
+            // over a stale id: Save stays disabled until a real one is chosen.
+            sessionId = TunnelHosts.isEligible(sessionID: t.sessionId, in: app.data.sessions)
+                ? t.sessionId : ""
             bindPort = t.bindPort
             targetHost = t.targetHost
             targetPort = t.targetPort
         } else {
-            sessionId = app.data.sessions.first?.id ?? ""
+            sessionId = tunnelHosts.first?.id ?? ""
         }
     }
 
