@@ -138,10 +138,10 @@ struct SplitMenu: View {
     var body: some View {
         Menu {
             if let current = window.selectedTab, current.canSplit {
-                // Moving an OPEN tab in still means terminals: adopting a live
-                // remote desktop into another tab's tree is a different job
-                // (its connection belongs to the tab it came from).
-                let others = window.tabs.filter { $0.id != current.id && $0.hasTerminalPanes }
+                // Any tab with a tree can be moved in, desktops included: the
+                // connection travels with the leaf rather than belonging to the
+                // tab it started in.
+                let others = window.tabs.filter { $0.id != current.id && $0.canSplit }
                 if !others.isEmpty {
                     Section("Move Open Tab Here") {
                         ForEach(others) { other in

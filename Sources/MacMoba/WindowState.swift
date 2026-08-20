@@ -365,16 +365,14 @@ final class WindowState: ObservableObject {
         guard source.id != dest.id,
               tabs.contains(where: { $0.id == source.id }),
               tabs.contains(where: { $0.id == dest.id }) else { return }
-        // Only a tab that *is* a pane tree can be moved into one. A VNC, RDP or
-        // local-shell tab keeps its real content outside the tree, so merging it
-        // would adopt the unused placeholder leaf — a blank pane — and drop the
-        // live connection on the floor when the source tab is removed below.
-        guard source.hasTerminalPanes, dest.hasTerminalPanes else { return }
+        // Both sides must own a pane tree. A local shell or a bare file browser
+        // keeps its content outside one, so there is nothing to hand over —
+        // everything else, remote desktops included, is now leaves.
+        guard source.canSplit, dest.canSplit else { return }
         let node = source.root
-        let panes = source.panes
         source.prepareForMerge()
         tabs.removeAll { $0.id == source.id }
-        dest.merge(node: node, panes: panes, axis: axis)
+        dest.merge(node: node, axis: axis)
         selectedTabID = dest.id
     }
 

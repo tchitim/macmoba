@@ -424,9 +424,12 @@ final class SessionTab: ObservableObject, Identifiable {
 
     /// Adopt another tab's live pane tree next to the focused pane —
     /// no reconnect, the terminals move as-is.
-    func merge(node: Node, panes incoming: [TerminalTab], axis: Axis) {
-        guard let target = focusedPane, !incoming.isEmpty else { return }
-        for pane in incoming { register(pane) }
+    /// Adopt another tab's whole tree beside the focused pane. Whatever it
+    /// holds: a shell, a remote desktop, or a split containing both.
+    func merge(node: Node, axis: Axis) {
+        let incoming = Self.contents(node)
+        guard let target = focusedContent, !incoming.isEmpty else { return }
+        for content in incoming { register(content) }
         root = Self.replacing(root, paneID: target.id) { leaf in
             .split(axis: axis, id: UUID(), first: leaf, second: node)
         }
