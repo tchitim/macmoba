@@ -339,7 +339,7 @@ struct PaneNodeView: View {
                 pane: pane,
                 tab: tab,
                 isFocused: tab.focusedPaneID == pane.id,
-                showChrome: tab.panes.count > 1,
+                showChrome: tab.paneCount > 1,
                 onClose: { window.closePane(pane, in: tab) }
             )
         case .leaf(let content):

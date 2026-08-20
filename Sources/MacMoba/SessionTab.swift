@@ -161,12 +161,12 @@ final class SessionTab: ObservableObject, Identifiable {
     /// Take a pane out of this tab's tree WITHOUT disconnecting it, so it can
     /// be adopted elsewhere. Returns false when it was the last one.
     func detach(_ pane: TerminalTab) -> Bool {
-        guard panes.count > 1, let newRoot = Self.removing(root, paneID: pane.id) else {
+        guard paneCount > 1, let newRoot = Self.removing(root, paneID: pane.id) else {
             return false
         }
         paneObservers[pane.id] = nil
         root = newRoot
-        if focusedPaneID == pane.id { focusedPaneID = panes.first?.id }
+        if focusedPaneID == pane.id { focusedPaneID = Self.contents(root).first?.id }
         settleLayout()
         return true
     }
@@ -302,7 +302,7 @@ final class SessionTab: ObservableObject, Identifiable {
         if let web { return web.title }
         if isFileBrowserOnly { return config.name }
         let base = focusedPane?.title ?? config.name
-        let count = panes.count
+        let count = paneCount
         return count > 1 ? "\(base) ▦\(count)" : base
     }
 
@@ -557,13 +557,16 @@ final class SessionTab: ObservableObject, Identifiable {
     }
 
     func closePane(_ pane: TerminalTab) -> Bool {
-        guard panes.count > 1 else { return false }
+        // Counted over every leaf, not just the terminals: closing the shell
+        // beside a remote desktop left one terminal, read as "the last pane",
+        // and took the whole tab — desktop included.
+        guard paneCount > 1 else { return false }
         pane.disconnect()
         paneObservers[pane.id] = nil
         if let newRoot = Self.removing(root, paneID: pane.id) {
             root = newRoot
         }
-        if focusedPaneID == pane.id { focusedPaneID = panes.first?.id }
+        if focusedPaneID == pane.id { focusedPaneID = Self.contents(root).first?.id }
         settleLayout()
         return true
     }
