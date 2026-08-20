@@ -225,17 +225,36 @@ final class VNCContainerView: NSView {
 struct VNCHostView: NSViewRepresentable {
     let tab: VNCTab
 
-    func makeNSView(context: Context) -> VNCContainerView {
+    /// A fresh host each time, with the one framebuffer moved into whichever
+    /// host is currently on screen — the same rule the web tab already
+    /// follows. Handing SwiftUI the shared container itself worked until the
+    /// pane moved: breaking a split apart builds a new representable, and the
+    /// old one's teardown pulled the container out of the new hierarchy on its
+    /// way out, leaving a live connection drawing into nothing. That is what a
+    /// black remote desktop after ungrouping was.
+    func makeNSView(context: Context) -> NSView {
+        let host = NSView()
+        attach(to: host)
+        return host
+    }
+
+    func updateNSView(_ host: NSView, context: Context) {
+        attach(to: host)
+    }
+
+    private func attach(to host: NSView) {
         let container = tab.container
+        guard container.superview !== host else { return }
+        container.removeFromSuperview()
+        container.frame = host.bounds
+        container.autoresizingMask = [.width, .height]
+        host.addSubview(container)
         DispatchQueue.main.async {
             if let fb = container.framebufferView {
                 container.window?.makeFirstResponder(fb)
             }
         }
-        return container
     }
-
-    func updateNSView(_ nsView: VNCContainerView, context: Context) {}
 }
 
 /// The VNC tab's content: the framebuffer, with a status overlay while it is

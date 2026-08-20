@@ -1143,13 +1143,28 @@ enum RDPScancodes {
 struct RDPHostView: NSViewRepresentable {
     let tab: RDPTab
 
-    func makeNSView(context: Context) -> RDPContainerView {
-        let view = tab.container
-        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
-        return view
+    /// Same rule as the VNC and web hosts: SwiftUI owns a plain host, and the
+    /// one live surface is moved into whichever host is on screen. Returning
+    /// the shared container directly breaks when the pane moves between tabs.
+    func makeNSView(context: Context) -> NSView {
+        let host = NSView()
+        attach(to: host)
+        return host
     }
 
-    func updateNSView(_ nsView: RDPContainerView, context: Context) {}
+    func updateNSView(_ host: NSView, context: Context) {
+        attach(to: host)
+    }
+
+    private func attach(to host: NSView) {
+        let container = tab.container
+        guard container.superview !== host else { return }
+        container.removeFromSuperview()
+        container.frame = host.bounds
+        container.autoresizingMask = [.width, .height]
+        host.addSubview(container)
+        DispatchQueue.main.async { container.window?.makeFirstResponder(container) }
+    }
 }
 
 struct RDPPaneView: View {
