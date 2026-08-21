@@ -328,7 +328,11 @@ struct WebViewHost: NSViewRepresentable {
     @ObservedObject var tab: WebTab
 
     func makeNSView(context: Context) -> NSView {
-        let container = NSView()
+        let container = SurfaceHostView()
+        container.onWindowChange = { [weak container] in
+            guard let container else { return }
+            attach(to: container)
+        }
         attach(to: container)
         return container
     }
@@ -340,10 +344,7 @@ struct WebViewHost: NSViewRepresentable {
     /// Same self-healing rule as the terminal panes: one web view, and it
     /// belongs to whichever container is currently on screen.
     private func attach(to container: NSView) {
-        guard let webView = tab.webView, webView.superview !== container else { return }
-        webView.removeFromSuperview()
-        webView.frame = container.bounds
-        webView.autoresizingMask = [.width, .height]
-        container.addSubview(webView)
+        guard let webView = tab.webView else { return }
+        SurfaceHosting.attach(webView, to: container)
     }
 }

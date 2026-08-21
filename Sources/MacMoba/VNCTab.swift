@@ -288,7 +288,11 @@ struct VNCHostView: NSViewRepresentable {
     /// way out, leaving a live connection drawing into nothing. That is what a
     /// black remote desktop after ungrouping was.
     func makeNSView(context: Context) -> NSView {
-        let host = NSView()
+        let host = SurfaceHostView()
+        host.onWindowChange = { [weak host] in
+            guard let host else { return }
+            attach(to: host)
+        }
         attach(to: host)
         return host
     }
@@ -299,11 +303,8 @@ struct VNCHostView: NSViewRepresentable {
 
     private func attach(to host: NSView) {
         let container = tab.container
-        guard container.superview !== host else { return }
-        container.removeFromSuperview()
-        container.frame = host.bounds
-        container.autoresizingMask = [.width, .height]
-        host.addSubview(container)
+        SurfaceHosting.attach(container, to: host)
+        guard container.superview === host, container.window != nil else { return }
         // The moved view keeps a live connection but stops painting, so it is
         // replaced rather than nudged — the same answer the library gives for
         // a resize, and for the same reason: a framebuffer view is bound to

@@ -1147,7 +1147,11 @@ struct RDPHostView: NSViewRepresentable {
     /// one live surface is moved into whichever host is on screen. Returning
     /// the shared container directly breaks when the pane moves between tabs.
     func makeNSView(context: Context) -> NSView {
-        let host = NSView()
+        let host = SurfaceHostView()
+        host.onWindowChange = { [weak host] in
+            guard let host else { return }
+            attach(to: host)
+        }
         attach(to: host)
         return host
     }
@@ -1158,11 +1162,7 @@ struct RDPHostView: NSViewRepresentable {
 
     private func attach(to host: NSView) {
         let container = tab.container
-        guard container.superview !== host else { return }
-        container.removeFromSuperview()
-        container.frame = host.bounds
-        container.autoresizingMask = [.width, .height]
-        host.addSubview(container)
+        SurfaceHosting.attach(container, to: host)
         DispatchQueue.main.async { container.window?.makeFirstResponder(container) }
     }
 }
