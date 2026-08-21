@@ -31,6 +31,11 @@ final class VNCTab: NSObject, ObservableObject, Identifiable {
     /// so the credential delegate hands the VNC server a literal password.
     private var resolvedConfig: SessionConfig?
     private var userClosed = false
+    /// Kept so the framebuffer view can be rebuilt. The library binds a view to
+    /// one framebuffer at construction — which is why a resize builds a new
+    /// one rather than poking the old — and moving between tabs turns out to
+    /// need the same treatment.
+    private var framebuffer: VNCFramebuffer?
 
     init(config: SessionConfig, app: AppState) {
         self.config = config
@@ -94,6 +99,29 @@ final class VNCTab: NSObject, ObservableObject, Identifiable {
         }
     }
 
+    /// Build a fresh framebuffer view for the live connection.
+    ///
+    /// Used after the pane moves to another tab. The old view stops painting
+    /// there: its display link is started only from `viewDidMoveToWindow` and
+    /// only when a window is already present, so re-parenting can leave it
+    /// with a live connection and nothing driving the screen. A new view goes
+    /// through the same construction the first one did.
+    func rebuildFramebufferView() {
+        guard let connection, let framebuffer else { return }
+        let view = VNCCAFramebufferView(frame: container.bounds,
+                                        framebuffer: framebuffer,
+                                        connection: connection)
+        container.install(view)
+        container.window?.makeFirstResponder(view)
+        // A new view starts empty and only fills in when the server sends the
+        // next frame — which, on a still desktop, may be a long wait that looks
+        // exactly like the bug this fixes. Hand it what we already have.
+        view.connection(connection, didUpdateFramebuffer: framebuffer,
+                        x: 0, y: 0,
+                        width: UInt16(framebuffer.size.width),
+                        height: UInt16(framebuffer.size.height))
+    }
+
     func disconnect() {
         userClosed = true
         connection?.disconnect()
@@ -155,6 +183,7 @@ extension VNCTab: VNCConnectionDelegate {
     nonisolated func connection(_ connection: VNCConnection,
                                 didCreateFramebuffer framebuffer: VNCFramebuffer) {
         Task { @MainActor in
+            self.framebuffer = framebuffer
             let view = VNCCAFramebufferView(frame: .zero,
                                             framebuffer: framebuffer,
                                             connection: connection)
@@ -168,6 +197,7 @@ extension VNCTab: VNCConnectionDelegate {
         // The view binds to one framebuffer at construction, so a resize means
         // building a fresh one rather than poking the old.
         Task { @MainActor in
+            self.framebuffer = framebuffer
             let view = VNCCAFramebufferView(frame: self.container.bounds,
                                             framebuffer: framebuffer,
                                             connection: connection)
@@ -249,18 +279,11 @@ struct VNCHostView: NSViewRepresentable {
         container.frame = host.bounds
         container.autoresizingMask = [.width, .height]
         host.addSubview(container)
-        DispatchQueue.main.async {
-            guard let fb = container.framebufferView else { return }
-            container.window?.makeFirstResponder(fb)
-            // RoyalVNC starts its display link only in `viewDidMoveToWindow`,
-            // and only when a window is already there. Re-parenting takes the
-            // link away and the view may rejoin a window at a moment AppKit
-            // does not report, leaving the session drawing frames nobody
-            // paints — black until something else forces a layout, which is
-            // why switching tabs "fixed" it. Ask for it again explicitly.
-            if fb.window != nil { fb.viewDidMoveToWindow() }
-            fb.needsDisplay = true
-        }
+        // The moved view keeps a live connection but stops painting, so it is
+        // replaced rather than nudged — the same answer the library gives for
+        // a resize, and for the same reason: a framebuffer view is bound to
+        // its framebuffer and its window at construction.
+        DispatchQueue.main.async { tab.rebuildFramebufferView() }
     }
 }
 
