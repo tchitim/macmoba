@@ -2,6 +2,7 @@
 // on this Mac instead of over SSH, in the same tab/split machinery.
 
 import AppKit
+import MacMobaCore
 import SwiftTerm
 import SwiftUI
 
@@ -20,6 +21,7 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     init(app: AppState) {
         self.app = app
         termView = ClipboardLocalTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+        termView.getTerminal().changeScrollback(TerminalDefaults.scrollback())
         super.init()
         termView.processDelegate = self
         applyFont(size: app.terminalFontSize)

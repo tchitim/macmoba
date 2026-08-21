@@ -116,6 +116,17 @@ final class AppState: ObservableObject {
             infoMessage = "Imported \(count) host(s) from ~/.ssh/config into the “SSH Config” group."
         }
     }
+    /// How many lines of history a new terminal keeps. Changing it does not
+    /// reach into open sessions: shrinking one would throw away scrollback the
+    /// user can still see, which is not what a preference should do.
+    @Published var terminalScrollback: Int = TerminalDefaults.scrollback() {
+        didSet {
+            let clamped = TerminalDefaults.clampedScrollback(terminalScrollback)
+            if clamped != terminalScrollback { terminalScrollback = clamped; return }
+            UserDefaults.standard.set(clamped, forKey: TerminalDefaults.scrollbackKey)
+        }
+    }
+
     @Published var terminalFontSize: Double =
         UserDefaults.standard.object(forKey: "terminalFontSize") as? Double ?? 13 {
         didSet {

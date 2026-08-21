@@ -51,6 +51,27 @@ final class TerminalThroughputBenchmark: XCTestCase {
         }
     }
 
+    /// Copying a large selection — the thing a user actually notices as a
+    /// pause, and a completely different code path from parsing or drawing.
+    func testCopySelection() throws {
+        try XCTSkipUnless(enabled, "set MACMOBA_BENCH=1 to measure")
+        for lines in [1_000, 10_000, 50_000] {
+            let view = TerminalView(frame: CGRect(x: 0, y: 0, width: 1200, height: 800))
+            view.getTerminal().resize(cols: 120, rows: 40)
+            view.feed(byteArray: [UInt8](Self.plain(lines: lines))[...])
+            view.selectAll()
+            let started = Date()
+            let text = view.getSelection() ?? ""
+            let seconds = Date().timeIntervalSince(started)
+            print(String(format: "copy  %6d lines  %8d chars in %6.3fs", lines, text.count, seconds))
+        }
+    }
+
+    // Dragging a selection is not measured directly: the selection service is
+    // internal to SwiftTerm, so a test in another module cannot drive it. Each
+    // update redraws the view, so the cost per mouse move is the draw figure
+    // above.
+
     // Reading the buffer back — what `read-screen` and session logging do — is
     // deliberately not measured here: scroll-invariant lines are not populated
     // without a real layout, so a headless run reports an empty buffer very

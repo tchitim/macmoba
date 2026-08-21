@@ -66,6 +66,20 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack {
+                    Text("Scrollback")
+                    Spacer()
+                    Stepper(value: Binding(
+                        get: { app.terminalScrollback },
+                        set: { app.terminalScrollback = $0 }
+                    ), in: 500...100_000, step: 5_000) {
+                        Text("\(app.terminalScrollback) lines")
+                            .monospacedDigit()
+                    }
+                }
+                Text("Applies to sessions opened from now on.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
                     Text("Font size")
                     Spacer()
                     Stepper(value: Binding(

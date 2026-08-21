@@ -81,6 +81,9 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         self.app = app
         self.title = config.name
         self.termView = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+        // SwiftTerm keeps 500 lines unless told otherwise — a few seconds of a
+        // build log.
+        termView.getTerminal().changeScrollback(TerminalDefaults.scrollback())
         super.init()
         termView.terminalDelegate = self
         applyFont(size: app.terminalFontSize)
