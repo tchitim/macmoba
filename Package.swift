@@ -101,8 +101,11 @@ let package = Package(
         ),
         .testTarget(
             name: "MacMobaCoreTests",
+            // SwiftTerm is here for the terminal benchmark, which measures the
+            // engine the app actually ships rather than a stand-in.
             dependencies: ["MacMobaCore", "CMacMobaRDP",
-                           .product(name: "RoyalVNCKit", package: "royalvnc")]
+                           .product(name: "RoyalVNCKit", package: "royalvnc"),
+                           .product(name: "SwiftTerm", package: "SwiftTerm")]
         ),
     ]
 )
