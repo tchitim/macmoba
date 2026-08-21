@@ -1,5 +1,7 @@
 # MacMoba
 
+[English](README.en.md) · **繁體中文**
+
 macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP/FTP、VNC、RDP、序列埠、網頁與本機終端，全部在同一個視窗裡。
 
 用 Swift + SwiftUI 寫成，沒有 Electron；連線密碼收在本機加密保險箱，並附一支 CLI 讓腳本與 AI agent 反過來驅動它。

@@ -1,5 +1,7 @@
 # 入門指南
 
+[English](getting-started.en.md) · **繁體中文**
+
 MacMoba 是 macOS 上的原生遠端連線工作站——把 MobaXterm 與 Royal TSX 的核心工作流搬到 Mac：SSH、Mosh、Telnet、Rlogin、SFTP/FTP、VNC、RDP、序列埠與網頁分頁都在同一個視窗裡，密碼收在本機加密保險箱，還有一支 `macmoba` CLI 讓腳本與 AI agent 反過來驅動它。
 
 ---
