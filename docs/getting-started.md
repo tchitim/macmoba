@@ -66,6 +66,27 @@ cmd:security find-generic-password -w -s my-server   # 鑰匙圈、pass、keepas
 
 1Password 需要先安裝 `op` CLI 並在 1Password 設定 → Developer 開啟「Integrate with 1Password CLI」。
 
+### 連線範本
+
+**一份預先填好的設定，但不含主機**——用來省掉「每加一台機器就重填同一堆欄位」。
+
+假設同一批 VM 都是 port 22、root、走同一台跳板、連上自動跑 `cd /opt && ls`、綠色標籤、tag `vm`。把這些存成一個範本，之後新增第六台時：
+
+**Sessions 標頭的 `+` → From Template → 選它** → 開出編輯器，**每個欄位都填好了，只有 host 是空的**。填 IP、⌘S，完成。
+
+範本放在 **Library（⌥⌘L）→ Templates**，而且**不會出現在連線列表裡**——它不是連線，是模子。
+
+**搭配 token 才是重點。** 範本的「連上自動執行」可以寫變數，送出當下才代入那台機器自己的值：
+
+```bash
+echo "登入 %username%@%host%:%port%"
+tmux new -A -s %name%
+```
+
+可用的有 `%host%` `%port%` `%username%`（或 `%user%`）`%name%` `%group%` `%domain%` `%webURL%`。大小寫不分；認不得的 token 原樣保留，不會壞掉。所以**一份範本可以罩住整個機群**，而不是每台各寫一份腳本。
+
+> 只想共用**帳號密碼**的話，用**群組憑證**更直接（右鍵資料夾 → Group Credential，子資料夾沿路徑往上繼承）。範本解決的是「整組設定」，群組憑證解決的是「同一組帳密」。
+
 ---
 
 ## CLI 設定
@@ -175,7 +196,7 @@ MacMoba 使用 [Sparkle](https://sparkle-project.org/)：預設每天檢查一�
 - **⌘K** 快速連線：直接輸入 `user@host:port`，不用先建立連線
 - **⇧⌘0** 總覽：所有視窗的連線縮圖一覽
 - **⌥⌘I** 檢閱器：單擊看連線資訊與可達性，雙擊才連線
-- **⌥⌘L** Library：管理巨集、共用憑證、連線範本
+- **⌥⌘L** Library：管理巨集、共用憑證、**連線範本**（見上面「連線範本」）
 - **Tools 選單**：SSH 金鑰產生器、網路工具（Wake-on-LAN／掃埠／DNS）、信任主機管理
 
 ---
