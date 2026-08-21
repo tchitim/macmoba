@@ -164,6 +164,29 @@ An agent running on a remote host cannot reach the local socket, but MacMoba als
 
 ---
 
+## Macros and MultiExec
+
+### Macros
+
+Add them in **Library (⌥⌘L) → Macros**. A macro is a piece of text plus a **"press Return after sending"** switch — with it off, the text waits at the prompt for you to confirm, which is what a dangerous command deserves.
+
+The first nine get **⌃⌘1–9** automatically; the rest stay available in the **Macros menu**.
+
+A macro goes through **exactly the same send path as your own typing**, so it obeys MultiExec broadcast. That is deliberate, and it is also why it is dangerous: a macro plus broadcast runs on the whole fleet from one keystroke. MacMoba asks first by default — turn that off under **Settings → General**, "Ask before a macro runs on every connected session".
+
+### MultiExec (broadcast input)
+
+The **MultiExec** button in the toolbar, or **⇧⌘B**. While it is on, what you type in one pane goes to **every connected terminal in every window**.
+
+**Turning it on gathers the terminal tabs into a grid**, and turning it off hands them back to their own tabs. The reason is simple: **broadcasting to sessions you cannot see** is the thing this feature most needs to avoid.
+
+**Leaving the group**: while broadcasting, each pane shows an antenna button in its top-right corner; clicking it takes that pane out. **The pane you are typing in always receives its own keystrokes** — a terminal that ignores your typing is not a feature, it is a fault.
+
+When something has been taken out, the toolbar icon changes to the **struck-through** antenna, so you can see this broadcast is not going everywhere.
+
+Remote desktops and web tabs take no part in broadcasting — there is no stream of bytes to type into.
+
+
 ## Keyboard and mouse on a remote desktop
 
 **Clicking into a VNC screen captures input**, the way VMware and Parallels do:
