@@ -313,6 +313,8 @@ final class AppState: ObservableObject {
             + "\n\nclipboard\n" + vncLogger.report
             + "\nkeys sent by last Paste to Remote (⌥⌘V): \(typed)"
             + "\n\nkeyboard focus\n" + vncKeyboard.focusReport
+            + "\n\nremote screen\n"
+            + (allTabs.compactMap(\.vnc).first?.screenReport ?? "no VNC tab")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }

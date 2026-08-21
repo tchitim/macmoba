@@ -36,6 +36,24 @@ final class VNCTab: NSObject, ObservableObject, Identifiable {
     /// one rather than poking the old — and moving between tabs turns out to
     /// need the same treatment.
     private var framebuffer: VNCFramebuffer?
+    /// Enough state to answer "why is it black" without guessing: whether
+    /// frames are still arriving, whether the view was rebuilt, and what the
+    /// view actually looked like when it was.
+    private(set) var framebufferUpdates = 0
+    private(set) var rebuilds = 0
+    private(set) var lastRebuildNote = "never"
+
+    var screenReport: String {
+        let fb = container.framebufferView
+        let size = framebuffer.map { "\(Int($0.size.width))×\(Int($0.size.height))" } ?? "none"
+        return """
+        frames received: \(framebufferUpdates)
+        framebuffer: \(size) · connection: \(connection == nil ? "none" : "live") · state: \(state)
+        container: bounds \(Int(container.bounds.width))×\(Int(container.bounds.height))         · superview \(container.superview == nil ? "none" : "yes")         · window \(container.window == nil ? "none" : "yes")
+        framebuffer view: \(fb == nil ? "none" : "present")         · bounds \(Int(fb?.bounds.width ?? 0))×\(Int(fb?.bounds.height ?? 0))         · window \(fb?.window == nil ? "none" : "yes")         · layer contents \(fb?.layer?.contents == nil ? "empty" : "set")
+        rebuilds: \(rebuilds) · last: \(lastRebuildNote)
+        """
+    }
 
     init(config: SessionConfig, app: AppState) {
         self.config = config
@@ -107,7 +125,13 @@ final class VNCTab: NSObject, ObservableObject, Identifiable {
     /// with a live connection and nothing driving the screen. A new view goes
     /// through the same construction the first one did.
     func rebuildFramebufferView() {
-        guard let connection, let framebuffer else { return }
+        rebuilds += 1
+        guard let connection, let framebuffer else {
+            lastRebuildNote = "skipped — \(self.connection == nil ? "no connection" : "no framebuffer")"
+            return
+        }
+        lastRebuildNote = "container \(Int(container.bounds.width))×\(Int(container.bounds.height))"
+            + " · window \(container.window == nil ? "none" : "yes")"
         let view = VNCCAFramebufferView(frame: container.bounds,
                                         framebuffer: framebuffer,
                                         connection: connection)
@@ -210,6 +234,7 @@ extension VNCTab: VNCConnectionDelegate {
                                 didUpdateFramebuffer framebuffer: VNCFramebuffer,
                                 x: UInt16, y: UInt16, width: UInt16, height: UInt16) {
         Task { @MainActor in
+            self.framebufferUpdates += 1
             self.container.framebufferView?.connection(
                 connection, didUpdateFramebuffer: framebuffer,
                 x: x, y: y, width: width, height: height)
