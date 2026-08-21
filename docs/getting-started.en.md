@@ -91,6 +91,43 @@ Available: `%host%` `%port%` `%username%` (or `%user%`) `%name%` `%group%` `%dom
 
 ---
 
+## SSH tunnels (port forwarding)
+
+The sidebar's **Tunnels** section, **+** on the right. Each tunnel has its own switch, and **it is independent of any tab**: a tunnel opens its own connection, so the machine's terminal does not have to be open.
+
+**Via session** only lists SSH and Mosh sessions: a tunnel is an SSH channel, which a remote desktop or a serial line cannot carry.
+
+### Three directions
+
+| Direction | What it means | Typical use |
+|---|---|---|
+| **Local (-L)** | A port here → a target the server can reach | Point a local tool at an internal database |
+| **Remote (-R)** | A port on the server → a target this Mac can reach | Show a colleague the service you are running locally |
+| **Dynamic (-D)** | A SOCKS5 proxy here | Send a browser, or anything that speaks SOCKS, out through the remote network |
+
+### Example: a local tool against an internal database
+
+The database is at `192.0.2.20:5432` and only the bastion can reach it.
+
+- Direction: **Local (-L)**
+- Via session: the bastion
+- Local port: `15432`
+- Target host: `192.0.2.20` (**as the server sees it**)
+- Target port: `5432`
+
+Turn the switch on, and `127.0.0.1:15432` on this Mac is that database.
+
+### Example: a SOCKS proxy for internal pages
+
+- Direction: **Dynamic (-D)**, Local port: `1080`, Via session: the bastion
+
+Point your browser's SOCKS5 setting at `127.0.0.1:1080`.
+
+**MacMoba's web tabs can do this for you**: create a Web session and choose an SSH session under **Tunnel through**, and that tab's traffic goes through its SOCKS tunnel — no tunnel to set up, no browser settings to change.
+
+> ⚠️ **macOS does something that misleads people here**: it bypasses the proxy entirely for **loopback and for addresses on your own subnet**. So some addresses connect directly however carefully the tunnel is configured. MacMoba says so plainly — the toolbar turns orange and reads `not via bastion`, rather than showing a "via the bastion" badge that is not true.
+
+
 ## Setting up the CLI
 
 The app bundles a `macmoba` binary so a terminal, a script or an AI agent on a remote host can drive MacMoba. Link it somewhere on your PATH:
@@ -211,4 +248,4 @@ When a connection ends, the pane sits at "Connection closed": **Return reconnect
 - **X11 forwarding** needs XQuartz with TCP listening enabled (`defaults write org.xquartz.X11 nolisten_tcp -bool false`, then log out and back in). SwiftNIO SSH has no native x11 channel, so MacMoba uses the equivalent remote forward: the server sends connections on `localhost:600N` back to this Mac, and `DISPLAY` is set for you
 - **Session logs are plaintext**: whatever appears on screen is written to them (file 0600)
 - **The VNC clipboard is Latin-1 only**: a protocol limit, so Chinese cannot cross — use ⌥⌘V / ⌥⌘C (see "Clipboard")
-- **A tunnel can only be carried by an SSH or Mosh session**: it is an SSH channel, which a remote desktop or serial line cannot host, so those are not offered in the picker
+- **A tunnel can only be carried by an SSH or Mosh session**: it is an SSH channel, which a remote desktop or serial line cannot host, so those are not offered in the picker (see "SSH tunnels")

@@ -91,6 +91,43 @@ tmux new -A -s %name%
 
 ---
 
+## SSH 隧道（Port forwarding）
+
+側邊欄的 **Tunnels** 區，右邊的 **+** 新增。每條隧道有一個開關，**它與那條 SSH 連線的分頁無關**——隧道自己開一條連線，你不必先把那台機器的終端機開著。
+
+**Via session** 只列得出 SSH 與 Mosh 連線：隧道是一條 SSH channel，遠端桌面與序列埠承載不了。
+
+### 三種方向
+
+| 方向 | 意思 | 典型用途 |
+|---|---|---|
+| **Local (-L)** | 本機的埠 → 從伺服器看得到的目標 | 用本機的工具連內網資料庫 |
+| **Remote (-R)** | 伺服器上的埠 → 從這台 Mac 看得到的目標 | 把本機開發中的服務，暫時給遠端同事看 |
+| **Dynamic (-D)** | 本機的 SOCKS5 代理 | 讓瀏覽器或任何支援 SOCKS 的程式走內網出去 |
+
+### 例子:用本機工具連內網資料庫
+
+資料庫在 `192.0.2.20:5432`，只有跳板機連得到它。
+
+- Direction: **Local (-L)**
+- Via session: 那台跳板機
+- Local port: `15432`
+- Target host: `192.0.2.20`（**從伺服器看出去的位址**）
+- Target port: `5432`
+
+打開開關，然後本機連 `127.0.0.1:15432` 就是那台資料庫。
+
+### 例子:SOCKS 代理看內網網頁
+
+- Direction: **Dynamic (-D)**、Local port: `1080`、Via session: 跳板機
+
+把瀏覽器的 SOCKS5 指到 `127.0.0.1:1080`。
+
+**MacMoba 的網頁分頁可以直接用**:新增連線時選 Web，在 **Tunnel through** 挑一條 SSH 連線，那個分頁的流量就走它的 SOCKS 隧道——不必自己開隧道、也不必改瀏覽器設定。
+
+> ⚠️ **macOS 有一個會誤導人的行為**:系統對 **loopback 與本機同網段**的位址一律**略過 proxy**。所以某些位址就算你設了隧道，實際上是直連的。MacMoba 的網頁分頁會照實說——工具列變橘色並標示 `not via bastion`，而不是掛一個假的「已透過跳板」標籤。
+
+
 ## CLI 設定
 
 App 內附一支 `macmoba`，讓終端機、腳本或遠端的 AI agent 驅動 MacMoba。建立一個 alias 或 symlink：
@@ -211,4 +248,4 @@ MacMoba 使用 [Sparkle](https://sparkle-project.org/)：預設每天檢查一�
 - **X11 轉發**需安裝 XQuartz 並開啟 TCP 監聽（`defaults write org.xquartz.X11 nolisten_tcp -bool false`，之後重登入）。底層 SwiftNIO SSH 沒有原生 x11 channel，MacMoba 改用等效的 remote forward：請伺服器把 `localhost:600N` 的連線送回這台 Mac，並自動設好遠端的 `DISPLAY`
 - **Session log 是明文**：畫面上出現的機密都會寫進去（檔案 0600）
 - **VNC 剪貼簿只能傳 Latin-1**：協定本身的限制，中文過不去；改用 ⌥⌘V／⌥⌘C（見上面「剪貼簿」）
-- **隧道只能掛在 SSH 或 Mosh 連線上**：隧道是一條 SSH channel，遠端桌面與序列埠承載不了，所以選單裡不會列出它們
+- **隧道只能掛在 SSH 或 Mosh 連線上**：隧道是一條 SSH channel，遠端桌面與序列埠承載不了，所以選單裡不會列出它們（見上面「SSH 隧道」）
