@@ -29,4 +29,21 @@ final class TerminalDefaultsTests: XCTestCase {
         XCTAssertEqual(TerminalDefaults.clampedScrollback(0), 500)
         XCTAssertEqual(TerminalDefaults.clampedScrollback(-1), 500)
     }
+
+    /// A renderer swap should never surprise someone who never asked for it —
+    /// if the GPU path ever misbehaves, the people affected opted in.
+    func testGPURenderingIsOffUntilAskedFor() {
+        let defaults = UserDefaults(suiteName: "metal-unset")!
+        defaults.removeObject(forKey: TerminalDefaults.metalRendererKey)
+        XCTAssertFalse(TerminalDefaults.usesMetalRenderer(from: defaults))
+    }
+
+    func testGPURenderingHonoursBothStoredAnswers() {
+        let defaults = UserDefaults(suiteName: "metal-set")!
+        defaults.set(true, forKey: TerminalDefaults.metalRendererKey)
+        XCTAssertTrue(TerminalDefaults.usesMetalRenderer(from: defaults))
+        // Explicitly off must not be read as "unset" and silently re-enabled.
+        defaults.set(false, forKey: TerminalDefaults.metalRendererKey)
+        XCTAssertFalse(TerminalDefaults.usesMetalRenderer(from: defaults))
+    }
 }

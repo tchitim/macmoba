@@ -22,6 +22,7 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
         self.app = app
         termView = ClipboardLocalTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
         termView.getTerminal().changeScrollback(TerminalDefaults.scrollback())
+        TerminalRendering.apply(to: termView)
         super.init()
         termView.processDelegate = self
         applyFont(size: app.terminalFontSize)

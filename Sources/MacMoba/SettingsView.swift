@@ -79,6 +79,12 @@ struct SettingsView: View {
                 Text("Applies to sessions opened from now on.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Toggle("GPU rendering", isOn: $app.terminalMetalRenderer)
+                Text("Draws with Metal instead of CoreGraphics. Repaints only the lines that "
+                     + "changed, which mainly helps when dragging a selection across a large "
+                     + "window. Falls back to CoreGraphics on its own if the GPU path fails.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 HStack {
                     Text("Font size")
                     Spacer()

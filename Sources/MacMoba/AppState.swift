@@ -127,6 +127,24 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Draw terminals on the GPU. Unlike scrollback this *does* reach into open
+    /// sessions: switching renderer keeps every line and every selection, so
+    /// there is nothing to lose by applying it live — and being able to flip it
+    /// mid-drag is the whole point of having the setting.
+    @Published var terminalMetalRenderer: Bool = TerminalDefaults.usesMetalRenderer() {
+        didSet {
+            UserDefaults.standard.set(terminalMetalRenderer, forKey: TerminalDefaults.metalRendererKey)
+            for tab in allTabs {
+                if let local = tab.localTerminal {
+                    TerminalRendering.apply(to: local.termView, enabled: terminalMetalRenderer)
+                }
+                for pane in tab.panes {
+                    TerminalRendering.apply(to: pane.termView, enabled: terminalMetalRenderer)
+                }
+            }
+        }
+    }
+
     @Published var terminalFontSize: Double =
         UserDefaults.standard.object(forKey: "terminalFontSize") as? Double ?? 13 {
         didSet {
