@@ -245,6 +245,19 @@ final class ClipboardTerminalView: TerminalView {
 
 /// Local shell tabs — same behaviour, different SwiftTerm base class.
 final class ClipboardLocalTerminalView: LocalProcessTerminalView {
+    /// The tab this view belongs to, so a keystroke at a dead shell can reach
+    /// the two ways out of one. Weak: the tab owns the view.
+    weak var owner: LocalTerminalTab?
+
+    /// Once the shell has exited there is no PTY to write to, so the only keys
+    /// that mean anything are Return (start a new shell) and Esc (close the
+    /// pane). Without this they land in a dead process and nothing happens —
+    /// which is exactly what "Esc doesn't close it" looked like.
+    override func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        if owner?.handleKeyAtDeadShell(Array(data)) == true { return }
+        super.send(source: source, data: data)
+    }
+
     override func mouseUp(with event: NSEvent) {
         super.mouseUp(with: event)
         TerminalClipboard.copyOnSelectIfEnabled(self)

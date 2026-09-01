@@ -4,6 +4,21 @@ Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.
 
+## 2.23
+
+**Fix: Esc did nothing after a local shell exited.**
+"Return to reconnect, Esc to close" was implemented on the SSH pane's input
+path. A local shell writes straight to its own process, so once that process
+was gone the keystrokes landed nowhere. It now consults the same policy — Return
+starts a fresh shell in the same pane, keeping the scrollback above the
+`[shell exited]` line — and an exited shell finally shows the overlay saying so,
+which the SSH pane has always had.
+
+修正:本機 shell 結束後按 Esc 沒有反應。「Return 重連、Esc 關閉」原本只做在 SSH pane 的輸入路徑上;
+本機 shell 是直接寫入自己的程序,程序沒了之後按鍵就落在空處。現在改用同一套判斷——Return 會在同一格
+開一個新的 shell,`[shell exited]` 以上的 scrollback 都還在——而且結束後終於會顯示提示視窗,
+那是 SSH pane 一直都有的。
+
 ## 2.22
 
 **Fix: a local shell went blank after Break Apart into Tabs.**

@@ -851,12 +851,24 @@ final class AppState: ObservableObject {
     /// the tab — which is what "close this" means when only one is left.
     func closePaneHoldingDeadTerminal(_ pane: TerminalTab) {
         for window in windows {
-            if let tab = window.tabs.first(where: { $0.localTerminal === pane }) {
-                window.closeTab(tab)
-                return
-            }
+            // The `localTerminal === pane` arm that used to be here compared a
+            // LocalTerminalTab against a TerminalTab — always false, and only
+            // ever reachable back when a local tab parked a placeholder pane.
             if let tab = window.tabs.first(where: { $0.panes.contains { $0 === pane } }) {
                 window.closePane(pane, in: tab)
+                return
+            }
+        }
+    }
+
+    /// The same, for one of this Mac's shells. Closing its pane closes the tab
+    /// when it was the only one, which is what "close this" means then.
+    func closePaneHoldingDeadShell(_ shell: LocalTerminalTab) {
+        for window in windows {
+            if let tab = window.tabs.first(where: {
+                $0.localShells.contains { $0 === shell }
+            }) {
+                window.closePaneContent(.localShell(shell), in: tab)
                 return
             }
         }

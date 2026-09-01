@@ -24,6 +24,7 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
         termView.getTerminal().changeScrollback(TerminalDefaults.scrollback())
         TerminalRendering.apply(to: termView)
         super.init()
+        (termView as? ClipboardLocalTerminalView)?.owner = self
         termView.processDelegate = self
         applyFont(size: app.terminalFontSize)
         app.theme.apply(to: termView)
@@ -51,6 +52,29 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
             execName: "-\(name)",
             currentDirectory: directory ?? FileManager.default.homeDirectoryForCurrentUser.path
         )
+    }
+
+    /// Keys typed at a dead shell. Returns true when the keystroke was one of
+    /// the two ways out, so the view swallows it instead of writing to a PTY
+    /// that no longer exists.
+    ///
+    /// Same policy object as an SSH pane, deliberately: "Return reconnects, Esc
+    /// closes" is one convention, and a second implementation of it is how the
+    /// two drift apart.
+    func handleKeyAtDeadShell(_ bytes: [UInt8]) -> Bool {
+        guard case .closed = state else { return false }
+        switch DeadTerminalKey.action(for: bytes) {
+        case .reconnect:
+            // A fresh shell in the same view, so the scrollback above the
+            // "[shell exited]" line is still there to scroll back through.
+            start()
+            return true
+        case .close:
+            app?.closePaneHoldingDeadShell(self)
+            return true
+        case .ignore:
+            return true
+        }
     }
 
     func disconnect() {

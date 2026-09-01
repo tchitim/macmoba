@@ -394,6 +394,7 @@ struct NonTerminalLeafView: View {
             case .localShell(let local):
                 LocalTerminalHostView(tab: local)
                     .background(Color(nsColor: app.theme.backgroundColor))
+                    .overlay { DeadShellOverlay(shell: local) }
             case .terminal: EmptyView()   // handled by PaneLeafView
             }
         }
@@ -808,6 +809,37 @@ struct EmptyStateView: View {
                         + "from \(url.lastPathComponent)."
                 }
             }
+        }
+    }
+}
+
+
+/// What an exited shell offers. The SSH pane has had this since it existed;
+/// without it the two keys that work are keys nobody can see, which is exactly
+/// how "Esc doesn't close the tab" reads from the outside.
+struct DeadShellOverlay: View {
+    @ObservedObject var shell: LocalTerminalTab
+
+    var body: some View {
+        if case .closed(let reason) = shell.state {
+            VStack(spacing: 10) {
+                Text("Shell exited")
+                    .foregroundStyle(.white.opacity(0.85))
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+                Button {
+                    shell.start()
+                } label: {
+                    Label("New Shell", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderedProminent)
+                Text("Return for a new shell · Esc to close")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .padding(20)
+            .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 }
