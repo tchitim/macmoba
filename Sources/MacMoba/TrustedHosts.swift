@@ -1,8 +1,9 @@
 // Reviewing and revoking pinned server identities.
 //
-// Two stores feed this: SSH host keys (known_hosts.json) and RDP server
-// certificates (rdp_certs.json). Both are "I decided to trust this once", and
-// until now the only way to undo either was to hand-edit JSON.
+// Three stores feed this: SSH host keys (known_hosts.json), RDP server
+// certificates (rdp_certs.json) and web-tab certificates (web_certs.json).
+// All three are "I decided to trust this once", and the only way to undo one
+// otherwise would be to hand-edit JSON.
 
 import MacMobaCore
 import SwiftUI
@@ -11,11 +12,13 @@ struct TrustedHost: Identifiable {
     enum Kind: String, CaseIterable {
         case ssh
         case rdp
+        case tls
 
         var title: String {
             switch self {
             case .ssh: return "SSH Host Keys"
             case .rdp: return "RDP Server Certificates"
+            case .tls: return "Web Certificates"
             }
         }
 
@@ -23,6 +26,7 @@ struct TrustedHost: Identifiable {
             switch self {
             case .ssh: return SessionKind.ssh.symbolName
             case .rdp: return SessionKind.rdp.symbolName
+            case .tls: return SessionKind.web.symbolName
             }
         }
 
@@ -37,6 +41,9 @@ struct TrustedHost: Identifiable {
                 // and .fixedSize does not override that.
                 return "Self-signed certificates are normal here, so this fingerprint "
                      + "is what identifies the server."
+            case .tls:
+                return "Trusted by hand because your Mac would not verify them. "
+                     + "A certificate that changes afterwards asks again."
             }
         }
     }
@@ -56,10 +63,12 @@ final class TrustedHostsModel: ObservableObject {
 
     private let sshStore: KnownHostsStore
     private let rdpStore: KnownHostsStore
+    private let tlsStore: KnownHostsStore
 
-    init(ssh: KnownHostsStore, rdp: KnownHostsStore) {
+    init(ssh: KnownHostsStore, rdp: KnownHostsStore, tls: KnownHostsStore) {
         self.sshStore = ssh
         self.rdpStore = rdp
+        self.tlsStore = tls
         reload()
     }
 
@@ -68,6 +77,8 @@ final class TrustedHostsModel: ObservableObject {
             TrustedHost(kind: .ssh, host: $0.host, port: $0.port, fingerprint: $0.fingerprint)
         } + rdpStore.allEntries().map {
             TrustedHost(kind: .rdp, host: $0.host, port: $0.port, fingerprint: $0.fingerprint)
+        } + tlsStore.allEntries().map {
+            TrustedHost(kind: .tls, host: $0.host, port: $0.port, fingerprint: $0.fingerprint)
         }
     }
 
@@ -80,8 +91,15 @@ final class TrustedHostsModel: ObservableObject {
         reload()
     }
 
+    /// Exhaustive on purpose. As a two-case ternary this silently sent every
+    /// new kind to the RDP store, which would "forget" the wrong pin and leave
+    /// the real one in place.
     private func store(for kind: TrustedHost.Kind) -> KnownHostsStore {
-        kind == .ssh ? sshStore : rdpStore
+        switch kind {
+        case .ssh: return sshStore
+        case .rdp: return rdpStore
+        case .tls: return tlsStore
+        }
     }
 }
 
@@ -94,8 +112,8 @@ struct TrustedHostsView: View {
     /// undone the pin's whole purpose.
     @State private var pendingForget: TrustedHost?
 
-    init(ssh: KnownHostsStore, rdp: KnownHostsStore) {
-        _model = StateObject(wrappedValue: TrustedHostsModel(ssh: ssh, rdp: rdp))
+    init(ssh: KnownHostsStore, rdp: KnownHostsStore, tls: KnownHostsStore) {
+        _model = StateObject(wrappedValue: TrustedHostsModel(ssh: ssh, rdp: rdp, tls: tls))
     }
 
     var body: some View {

@@ -231,6 +231,59 @@ extension WebTab: WKScriptMessageHandler {
 }
 
 extension WebTab: WKNavigationDelegate {
+    /// Self-signed and private-CA certificates are the norm on the internal
+    /// consoles this tab exists to reach, and WebKit refuses them with no way
+    /// through. So take the decision the same way the SSH host key and the RDP
+    /// certificate are taken: evaluate normally first, and only when the system
+    /// says no, show the fingerprint once and pin it. A pinned certificate that
+    /// later changes is never waved through — that is the case the whole
+    /// mechanism is for.
+    func webView(_ webView: WKWebView,
+                 didReceive challenge: URLAuthenticationChallenge,
+                 completionHandler: @escaping (URLSession.AuthChallengeDisposition,
+                                               URLCredential?) -> Void) {
+        let space = challenge.protectionSpace
+        guard space.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = space.serverTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        // A certificate the system is happy with needs no ceremony. Prompting
+        // for those would teach the habit of clicking through this dialog,
+        // which is exactly what makes the dangerous one useless.
+        if WebCertificate.isSystemTrusted(trust) {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        guard let identity = WebCertificate.identity(of: trust) else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        let store = WebCertificateStore.shared
+        let host = space.host
+        let port = space.port
+        let outcome = WebCertificateTrust.outcome(
+            stored: store.storedFingerprint(host: host, port: port),
+            offered: identity.fingerprint)
+
+        if outcome == .trusted {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+            return
+        }
+        let accepted = WebCertificatePrompt.ask(host: host,
+                                                commonName: identity.commonName,
+                                                fingerprint: identity.fingerprint,
+                                                reason: outcome)
+        if accepted {
+            store.store(fingerprint: identity.fingerprint, host: host, port: port)
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        } else {
+            statusLine = "Certificate for \(host) was not trusted."
+            completionHandler(.cancelAuthenticationChallenge, nil)
+        }
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) {
         statusLine = error.localizedDescription

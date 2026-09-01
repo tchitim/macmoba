@@ -374,7 +374,8 @@ struct RootView: View {
             QuickConnectView { window.quickConnect($0) }
         }
         .sheet(isPresented: $window.showTrustedHosts) {
-            TrustedHostsView(ssh: app.knownHosts, rdp: RDPCertificateStore.shared)
+            TrustedHostsView(ssh: app.knownHosts, rdp: RDPCertificateStore.shared,
+                             tls: WebCertificateStore.shared)
         }
         .sheet(isPresented: $window.showOverview) {
             OverviewView().environmentObject(app).environmentObject(window)
