@@ -6,7 +6,7 @@ macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP
 
 用 Swift + SwiftUI 寫成，沒有 Electron；連線密碼收在本機加密保險箱，並附一支 CLI 讓腳本與 AI agent 反過來驅動它。
 
-**[📖 入門指南](docs/getting-started.md)** · **[⬇️ 下載最新版](../../releases/latest)**
+**[📖 入門指南](docs/getting-started.md)** · **[📋 更新紀錄](CHANGELOG.md)** · **[⬇️ 下載最新版](../../releases/latest)**
 
 ---
 
@@ -16,7 +16,7 @@ macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP
 - SSH（多層跳板 `ssh -J` 鏈、gateway failover）、Mosh（斷網續連）、Telnet、Rlogin、序列埠（RS-232）
 - VNC、RDP（NLA/CredSSP、跨螢幕、剪貼簿含檔案）、FTP/FTPS
 - **遠端桌面輸入擷取**：點進畫面即接管鍵盤與滑鼠（⌃⌥ 放開），送的是實體鍵，所以組字交給遠端自己的輸入法；⌥⌘V／⌥⌘C 讓中文也能雙向貼上
-- 網頁分頁，可指定走某個 SSH 連線的 SOCKS 隧道看內網頁面
+- 網頁分頁，可指定走某個 SSH 連線的 SOCKS 隧道看內網頁面；**自簽或私有 CA 憑證**（OpenShift console、Cockpit、交換器管理介面）看過指紋後可釘選，憑證日後變動會再問
 - 本機終端分頁
 
 **組織**
@@ -28,6 +28,7 @@ macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP
 **終端**
 - **異質分割窗格**：一格 SSH、一格遠端桌面、一格網頁都在同一個分頁裡；可合併、可解散成獨立分頁，**版面會被記住並在下次啟動還原**
 - MultiExec 廣播輸入、巨集、Session log、scrollback 搜尋
+- Scrollback 預設保留 **10,000 行**（可調 500–100,000）；選用 **GPU 算繪**，在大視窗拖曳選取時明顯更順
 - SFTP 面板（Quick Look、chmod、隱藏檔、拖放上傳）
 - ZMODEM 雙向傳檔（`rz`/`sz`）、貼上截圖自動上傳到遠端
 - X11 forwarding（走 remote forward，需 XQuartz）
@@ -37,6 +38,7 @@ macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP
 - 網路工具：Wake-on-LAN、埠掃描、DNS 查詢
 - Bonjour 網路探索、連線健康監測、遠端資源監視
 - 從 `~/.ssh/config`、PuTTY `.reg`、RDCMan `.rdg` 匯入
+- Trusted Hosts：檢視與撤銷已釘選的 SSH 主機金鑰、RDP 與網頁憑證
 
 **自動化**
 - `macmoba` CLI + Unix 控制通道（list-tabs / open / open-url / send / read-screen / notify）

@@ -6,7 +6,7 @@ A native remote-connection workstation for macOS — SSH, Mosh, Telnet, Rlogin, 
 
 Written in Swift and SwiftUI, no Electron. Passwords live in a local encrypted vault, and a bundled CLI lets scripts and AI agents drive the app in return.
 
-**[📖 Getting started](docs/getting-started.en.md)** · **[⬇️ Download the latest release](../../releases/latest)**
+**[📖 Getting started](docs/getting-started.en.md)** · **[📋 Changelog](CHANGELOG.md)** · **[⬇️ Download the latest release](../../releases/latest)**
 
 ---
 
@@ -16,7 +16,7 @@ Written in Swift and SwiftUI, no Electron. Passwords live in a local encrypted v
 - SSH (chained `ssh -J` jump hosts, gateway failover), Mosh (survives losing the network), Telnet, Rlogin, serial (RS-232)
 - VNC, RDP (NLA/CredSSP, multi-display, clipboard with files), FTP/FTPS
 - **Remote desktop input capture**: click in and the keyboard and mouse belong to the remote machine (⌃⌥ to let go). Physical keys are forwarded, so composition is the remote input method's job; ⌥⌘V / ⌥⌘C carry text the VNC protocol cannot
-- Web tabs, optionally routed through a chosen SSH session's SOCKS tunnel to reach an internal page
+- Web tabs, optionally routed through a chosen SSH session's SOCKS tunnel to reach an internal page; **self-signed and private-CA certificates** (an OpenShift console, a Cockpit, a switch's admin UI) can be pinned after you have seen the fingerprint, and are queried again if they ever change
 - Local shell tabs
 
 **Organising**
@@ -28,12 +28,14 @@ Written in Swift and SwiftUI, no Electron. Passwords live in a local encrypted v
 **Terminal**
 - **Mixed split panes**: a shell, a remote desktop and a web page side by side in one tab; merge them, break them apart into tabs, and **the arrangement is restored on next launch**
 - MultiExec broadcast input, macros, session logging, scrollback search
+- **10,000 lines** of scrollback by default (adjustable from 500 to 100,000); optional **GPU rendering**, which is noticeably smoother when dragging a selection across a large window
 - SFTP panel (Quick Look, chmod, hidden files, drag to upload)
 - ZMODEM transfers both ways (`rz`/`sz`), paste a screenshot to upload it
 - X11 forwarding (over a remote forward; needs XQuartz)
 
 **Tools**
 - SSH key generator (ed25519 / ECDSA)
+- Trusted Hosts: review and revoke pinned SSH host keys, RDP and web certificates
 - Network tools: Wake-on-LAN, port scan, DNS lookup
 - Bonjour discovery, reachability monitoring, remote resource monitor
 - Import from `~/.ssh/config`, PuTTY `.reg`, RDCMan `.rdg`
