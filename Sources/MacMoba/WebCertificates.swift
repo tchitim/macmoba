@@ -35,6 +35,20 @@ enum WebCertificate {
         return (TLSFingerprint.sha256(der: der), (name as String?) ?? "unnamed")
     }
 
+    /// Record that the user accepted this certificate's faults, so that anyone
+    /// re-evaluating the same trust afterwards gets "valid" rather than the
+    /// original error. Handing back a credential built on a trust that still
+    /// evaluates as bad is the documented way to have it refused a second time.
+    ///
+    /// Safe by construction: this is only ever reached once the fingerprint has
+    /// matched the pin, so the faults being excused belong to a certificate the
+    /// user has already identified and accepted.
+    @discardableResult
+    static func acceptFaults(of trust: SecTrust) -> Bool {
+        let exceptions = SecTrustCopyExceptions(trust)
+        return SecTrustSetExceptions(trust, exceptions)
+    }
+
     /// Whether macOS is already happy with this chain. Asked first so that a
     /// properly signed site never produces a prompt: this whole path exists for
     /// certificates the system rejects, and prompting for good ones would train

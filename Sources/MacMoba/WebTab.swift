@@ -275,6 +275,8 @@ extension WebTab: WKNavigationDelegate {
             completionHandler(.performDefaultHandling, nil)
             return
         case .accept:
+            let excused = WebCertificate.acceptFaults(of: trust)
+            tlsLog.info("accepting pinned certificate for \(host, privacy: .public); exceptionsSet=\(excused)")
             completionHandler(.useCredential, URLCredential(trust: trust))
             return
         case .decline:
@@ -324,6 +326,7 @@ extension WebTab: WKNavigationDelegate {
             }
             store.store(fingerprint: identity.fingerprint, host: host, port: port)
             tlsLog.info("pinned \(identity.fingerprint, privacy: .public) for \(host, privacy: .public):\(port); reloading")
+            WebCertificate.acceptFaults(of: trust)
             self.statusLine = ""
             if let url { self.load(url) } else { self.webView?.reload() }
         }
@@ -339,7 +342,15 @@ extension WebTab: WKNavigationDelegate {
             if (error as NSError).code == NSURLErrorCancelled { return }
         }
         let nsError = error as NSError
-        tlsLog.info("provisional navigation failed: \(nsError.domain, privacy: .public) \(nsError.code) \(error.localizedDescription, privacy: .public)")
+        // Which URL failed matters more than the message: a -1202 for a host
+        // that never produced a challenge is a completely different problem
+        // from one for the host we just accepted.
+        let failingURL = (nsError.userInfo[NSURLErrorFailingURLStringErrorKey] as? String)
+            ?? (nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
+            ?? "unknown"
+        tlsLog.info("""
+            provisional navigation failed: \(nsError.domain, privacy: .public) \(nsError.code)             failingURL=\(failingURL, privacy: .public)             webViewURL=\(webView.url?.absoluteString ?? "none", privacy: .public)             proxied=\(self.proxyDescription ?? "no")             \(error.localizedDescription, privacy: .public)
+            """)
         statusLine = error.localizedDescription
     }
 

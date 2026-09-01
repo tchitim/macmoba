@@ -33,7 +33,7 @@ swift build -c release
 
 APP=MacMoba.app
 BIN=.build/release/MacMoba
-VERSION=2.18
+VERSION=2.19
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -358,6 +358,29 @@ if (( RELEASE )); then
   ls -t "$RELEASE_DIR"/MacMoba-*.dmg(N) | tail -n +3 | xargs -r rm -f
   rm -f "$RELEASE_DIR"/appcast.xml(N) "$RELEASE_DIR"/*.delta(N)
 
+  # What changed, taken from CHANGELOG.md. Refused rather than defaulted: a
+  # release whose notes say nothing is one nobody can tell apart from the last.
+  NOTES_BODY="$(awk -v v="## ${VERSION}" '
+    $0 == v { found = 1; next }
+    found && /^## / { exit }
+    found { print }
+  ' CHANGELOG.md)"
+  if [[ -z "${NOTES_BODY//[[:space:]]/}" ]]; then
+    echo "ERROR: CHANGELOG.md has no '## ${VERSION}' section."
+    echo "       Add one before releasing — the release notes come from it."
+    exit 1
+  fi
+
+  # Sparkle picks up a release-notes file sitting beside the archive, which is
+  # what puts "what's new" in the in-app update dialog instead of a bare version
+  # number. Same text as the GitHub release, so the two cannot drift.
+  {
+    echo "<html><head><meta charset=\"utf-8\"></head><body>"
+    printf '%s\n' "$NOTES_BODY" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
+      -e 's/^$/<\/p><p>/' -e 's/^\*\*\(.*\)\*\*$/<b>\1<\/b>/'
+    echo "</body></html>"
+  } > "$RELEASE_DIR/MacMoba-${VERSION}.html"
+
   echo "Signing appcast (EdDSA key from the login keychain) ..."
   "$GENERATE_APPCAST" \
     --download-url-prefix "https://github.com/${GH_REPO}/releases/download/${TAG}/" \
@@ -367,7 +390,9 @@ if (( RELEASE )); then
   gh release create "$TAG" "$RELEASE_DIR"/*(N) \
     --repo "$GH_REPO" \
     --title "MacMoba ${VERSION}" \
-    --notes "MacMoba ${VERSION}
+    --notes "${NOTES_BODY}
+
+---
 
 安裝:下載 \`MacMoba-${VERSION}.dmg\`,拖進「應用程式」。已 Developer ID 簽名 + Apple 公證。
 需求:macOS 13+、Apple Silicon。
