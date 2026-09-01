@@ -252,6 +252,7 @@ extension WebTab: WKNavigationDelegate {
         let space = challenge.protectionSpace
         guard space.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let trust = space.serverTrust else {
+            tlsLog.info("challenge \(space.host, privacy: .public):\(space.port) method=\(space.authenticationMethod, privacy: .public) -> defaultHandling (not server trust)")
             completionHandler(.performDefaultHandling, nil)
             return
         }
@@ -263,6 +264,10 @@ extension WebTab: WKNavigationDelegate {
             systemTrusted: WebCertificate.isSystemTrusted(trust),
             stored: store.storedFingerprint(host: host, port: port),
             offered: identity?.fingerprint)
+
+        tlsLog.info("""
+            challenge \(host, privacy: .public):\(port)             systemTrusted=\(WebCertificate.isSystemTrusted(trust))             offered=\(identity?.fingerprint ?? "none", privacy: .public)             stored=\(store.storedFingerprint(host: host, port: port) ?? "none", privacy: .public)             action=\(String(describing: action), privacy: .public)             pendingPrompt=\(self.certificateDecisionPending)
+            """)
 
         let outcome: WebCertificateTrust.Outcome
         switch action {
@@ -292,24 +297,33 @@ extension WebTab: WKNavigationDelegate {
         cancelledForCertificatePrompt = true
         completionHandler(.cancelAuthenticationChallenge, nil)
 
-        guard !certificateDecisionPending else { return }
+        guard !certificateDecisionPending else {
+            tlsLog.info("a prompt for this tab is already on screen; not stacking another")
+            return
+        }
         certificateDecisionPending = true
         let url = webView.url ?? WebAddress.url(for: addressText)
+        tlsLog.info("will ask about \(host, privacy: .public); reload target=\(url?.absoluteString ?? "none", privacy: .public)")
+        // Says why the page is blank even if the alert is somehow missed.
+        statusLine = "Waiting on the certificate decision for \(host) …"
 
         // Off this turn of the run loop, so the alert cannot run inside the
         // delegate callback WebKit is still unwinding.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             defer { self.certificateDecisionPending = false }
+            tlsLog.info("showing certificate alert for \(host, privacy: .public)")
             let accepted = WebCertificatePrompt.ask(host: host,
                                                     commonName: identity.commonName,
                                                     fingerprint: identity.fingerprint,
                                                     reason: outcome)
+            tlsLog.info("alert answered accepted=\(accepted) for \(host, privacy: .public)")
             guard accepted else {
                 self.statusLine = "Certificate for \(host) was not trusted."
                 return
             }
             store.store(fingerprint: identity.fingerprint, host: host, port: port)
+            tlsLog.info("pinned \(identity.fingerprint, privacy: .public) for \(host, privacy: .public):\(port); reloading")
             self.statusLine = ""
             if let url { self.load(url) } else { self.webView?.reload() }
         }
@@ -324,6 +338,8 @@ extension WebTab: WKNavigationDelegate {
             cancelledForCertificatePrompt = false
             if (error as NSError).code == NSURLErrorCancelled { return }
         }
+        let nsError = error as NSError
+        tlsLog.info("provisional navigation failed: \(nsError.domain, privacy: .public) \(nsError.code) \(error.localizedDescription, privacy: .public)")
         statusLine = error.localizedDescription
     }
 

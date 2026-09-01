@@ -8,6 +8,14 @@ import AppKit
 import Foundation
 import MacMobaCore
 import Security
+import os
+
+/// Every certificate decision is logged. Two releases were spent guessing at
+/// this from the outside — what the challenge actually contained ends that
+/// faster than any amount of reasoning about what it ought to contain.
+///
+///     log show --predicate 'subsystem == "dev.macmoba.tls"' --last 10m --info
+let tlsLog = Logger(subsystem: "dev.macmoba.tls", category: "challenge")
 
 enum WebCertificateStore {
     static let shared = KnownHostsStore(
@@ -40,6 +48,10 @@ enum WebCertificate {
 enum WebCertificatePrompt {
     static func ask(host: String, commonName: String, fingerprint: String,
                     reason: WebCertificateTrust.Outcome) -> Bool {
+        // The page load has already been refused by this point, so if the app
+        // is in the background this alert is the only sign anything is waiting
+        // — a certificate prompt nobody sees reads as "it just doesn't work".
+        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         var details = "Common name: \(commonName)\nSHA-256: \(fingerprint)"
 
