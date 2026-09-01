@@ -4,6 +4,21 @@ Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.
 
+## 2.21
+
+**Local terminals can be split, and can share a tab with anything else.**
+The local shell was the one tab kind left out of the heterogeneous-split work:
+it parked a never-connected SSH pane in the tree and drew itself around it, so
+`canSplit` had to claim the tab had no tree at all. It is now an ordinary leaf,
+which means Split Right/Down works on it, it can sit beside an SSH pane or a
+remote desktop, it survives Break Apart into Tabs, and the arrangement is
+restored on the next launch. The split menu gained **New Local Terminal**.
+
+本機終端機現在可以分割,也可以跟其他任何連線共用同一個分頁。它原本是唯一沒有納入異質分割的分頁類型——
+在樹裡塞一個永遠不會連線的 SSH pane,再繞過它自己畫,所以 `canSplit` 只能宣稱這個分頁根本沒有樹。
+現在它就是一個普通的葉節點:可以分割、可以跟 SSH 或遠端桌面並排、解散分割後仍然正常,版面也會在下次啟動還原。
+分割選單新增 **New Local Terminal**。
+
 ## 2.20
 
 **Web tabs can finally load a self-signed internal console.**

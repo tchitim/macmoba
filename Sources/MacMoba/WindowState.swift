@@ -296,6 +296,11 @@ final class WindowState: ObservableObject {
     /// Open a different saved session in a new pane of the current tab.
     /// Put any saved session beside the focused pane — a remote desktop next to
     /// a shell is the point of this, not an edge case.
+    func splitWithLocalShell(_ axis: Axis) {
+        selectedTab?.splitFocusedWithLocalShell(axis)
+        app.saveOpenWorkspace()
+    }
+
     func splitWithNewConnection(_ config: SessionConfig, axis: Axis) {
         _ = selectedTab?.splitFocused(axis, with: app.resolved(config))
         app.saveOpenWorkspace()

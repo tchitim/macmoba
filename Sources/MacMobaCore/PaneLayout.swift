@@ -13,6 +13,11 @@ import Foundation
 
 public indirect enum PaneLayout: Codable, Equatable, Sendable {
     case leaf(sessionID: String)
+    /// This Mac's own login shell. A case of its own rather than a reserved
+    /// session id, because a local shell has no vault session and encoding one
+    /// as if it did is the kind of lie that survives right up until something
+    /// looks the id up and finds nothing.
+    case localShell
     /// The deliberate gap beside a lone pane in a grid.
     case empty
     case split(vertical: Bool, first: PaneLayout, second: PaneLayout)
@@ -28,6 +33,10 @@ public indirect enum PaneLayout: Codable, Equatable, Sendable {
         switch self {
         case .leaf(let id):
             return available.contains(id) ? self : nil
+        case .localShell:
+            // Depends on no vault entry, so nothing can delete it out from
+            // under the layout.
+            return self
         case .empty:
             return nil
         case .split(let vertical, let first, let second):
@@ -40,10 +49,23 @@ public indirect enum PaneLayout: Codable, Equatable, Sendable {
         }
     }
 
+    /// Whether this layout holds any of this Mac's own shells. Asked because a
+    /// tab of only shells has no session id, and "no session ids" otherwise
+    /// reads as "nothing to open".
+    public var containsLocalShell: Bool {
+        switch self {
+        case .localShell: return true
+        case .leaf, .empty: return false
+        case .split(_, let first, let second):
+            return first.containsLocalShell || second.containsLocalShell
+        }
+    }
+
     /// Every session id this layout would open, in the order it would open them.
     public var sessionIDs: [String] {
         switch self {
         case .leaf(let id): return [id]
+        case .localShell: return []
         case .empty: return []
         case .split(_, let first, let second): return first.sessionIDs + second.sessionIDs
         }

@@ -21,6 +21,7 @@ final class SessionTab: ObservableObject, Identifiable {
     @MainActor
     enum PaneContent {
         case terminal(TerminalTab)
+        case localShell(LocalTerminalTab)
         case vnc(VNCTab)
         case rdp(RDPTab)
         case web(WebTab)
@@ -33,10 +34,20 @@ final class SessionTab: ObservableObject, Identifiable {
             return nil
         }
 
+        /// Non-nil only for this Mac's own shell. Separate from `terminal`
+        /// because the two are different types with different lifecycles — a
+        /// local shell has no connection to dial, drop or log.
+        var localShell: LocalTerminalTab? {
+            if case .localShell(let pane) = self { return pane }
+            return nil
+        }
+
         /// The vault session behind this pane, for saving the arrangement.
         var sessionID: String {
             switch self {
             case .terminal(let pane): return pane.config.id
+            // No vault session behind a local shell; see PaneLayout.localShell.
+            case .localShell: return ""
             case .vnc(let pane): return pane.config.id
             case .rdp(let pane): return pane.config.id
             case .web(let pane): return pane.config.id
@@ -46,6 +57,7 @@ final class SessionTab: ObservableObject, Identifiable {
         var id: UUID {
             switch self {
             case .terminal(let pane): return pane.id
+            case .localShell(let pane): return pane.id
             case .vnc(let pane): return pane.id
             case .rdp(let pane): return pane.id
             case .web(let pane): return pane.id
@@ -55,6 +67,7 @@ final class SessionTab: ObservableObject, Identifiable {
         var state: TerminalTab.State {
             switch self {
             case .terminal(let pane): return pane.state
+            case .localShell(let pane): return pane.state
             case .vnc(let pane): return pane.state
             case .rdp(let pane): return pane.state
             case .web(let pane): return pane.state
@@ -64,6 +77,7 @@ final class SessionTab: ObservableObject, Identifiable {
         var title: String {
             switch self {
             case .terminal(let pane): return pane.title
+            case .localShell(let pane): return pane.title
             case .vnc(let pane): return pane.title
             case .rdp(let pane): return pane.title
             case .web(let pane): return pane.title
@@ -73,6 +87,7 @@ final class SessionTab: ObservableObject, Identifiable {
         func disconnect() {
             switch self {
             case .terminal(let pane): pane.disconnect()
+            case .localShell(let pane): pane.disconnect()
             case .vnc(let pane): pane.disconnect()
             case .rdp(let pane): pane.disconnect()
             case .web(let pane): pane.disconnect()
@@ -82,6 +97,7 @@ final class SessionTab: ObservableObject, Identifiable {
         var objectWillChange: ObservableObjectPublisher {
             switch self {
             case .terminal(let pane): return pane.objectWillChange
+            case .localShell(let pane): return pane.objectWillChange
             case .vnc(let pane): return pane.objectWillChange
             case .rdp(let pane): return pane.objectWillChange
             case .web(let pane): return pane.objectWillChange
@@ -100,8 +116,17 @@ final class SessionTab: ObservableObject, Identifiable {
 
     let id = UUID()
     let config: SessionConfig
-    /// Local shell tab (MobaXterm-style); nil for SSH tabs.
-    let localTerminal: LocalTerminalTab?
+    /// This Mac's shell, if one of the panes is one. Derived from the tree for
+    /// the same reason vnc/rdp/web are: a tab can hold a shell beside a remote
+    /// desktop, so "the tab's local terminal" is a question about its panes.
+    var localTerminal: LocalTerminalTab? { localShells.first }
+
+    /// Every local shell in this tab. A tab can hold several now, so anything
+    /// applied to "the" local terminal — font, theme, renderer — has to walk
+    /// this rather than the first one it finds.
+    var localShells: [LocalTerminalTab] {
+        Self.contents(root).compactMap(\.localShell)
+    }
     /// A remote desktop or web page in this tab, if there is one. Derived from
     /// the tree rather than stored beside it: a tab can now hold a shell and a
     /// desktop at once, so "the tab's VNC" is a question about its panes, not a
@@ -143,7 +168,6 @@ final class SessionTab: ObservableObject, Identifiable {
     init(config: SessionConfig, app: AppState) {
         self.config = config
         self.app = app
-        self.localTerminal = nil
         self.isFileBrowserOnly = false
         let pane = TerminalTab(config: config, app: app)
         root = .leaf(.terminal(pane))
@@ -166,7 +190,6 @@ final class SessionTab: ObservableObject, Identifiable {
     init(adopting content: PaneContent, config: SessionConfig, app: AppState) {
         self.config = config
         self.app = app
-        self.localTerminal = nil
         self.isFileBrowserOnly = false
         root = .leaf(content)
         focusedPaneID = content.id
@@ -194,6 +217,8 @@ final class SessionTab: ObservableObject, Identifiable {
 
     private static func layout(of node: Node) -> PaneLayout {
         switch node {
+        case .leaf(.localShell):
+            return .localShell
         case .leaf(let content):
             return .leaf(sessionID: content.sessionID)
         case .empty:
@@ -208,7 +233,17 @@ final class SessionTab: ObservableObject, Identifiable {
     /// is the layout, never a connection.
     static func restore(_ layout: PaneLayout, sessions: [String: SessionConfig],
                         app: AppState) -> SessionTab? {
-        guard let first = layout.sessionIDs.first, let config = sessions[first] else { return nil }
+        // A tab of nothing but local shells has no session id to start from —
+        // it is still a tab, so it gets the same stand-in config a freshly
+        // opened local tab uses rather than being dropped as unrestorable.
+        let config: SessionConfig
+        if let first = layout.sessionIDs.first {
+            guard let found = sessions[first] else { return nil }
+            config = found
+        } else {
+            guard layout.containsLocalShell else { return nil }
+            config = SessionConfig(name: "Local", host: "localhost", username: NSUserName())
+        }
         let tab = SessionTab(restoringInto: config, app: app)
         guard let node = tab.node(for: layout, sessions: sessions) else { return nil }
         tab.adoptRestored(node)
@@ -220,6 +255,13 @@ final class SessionTab: ObservableObject, Identifiable {
         switch layout {
         case .empty:
             return .empty(id: UUID())
+        case .localShell:
+            guard let app else { return nil }
+            let local = LocalTerminalTab(app: app)
+            let content = PaneContent.localShell(local)
+            register(content)
+            local.start(directory: nil)
+            return .leaf(content)
         case .leaf(let sessionID):
             guard let app, let config = sessions[sessionID] else { return nil }
             return .leaf(makeContent(for: app.resolved(config), app: app))
@@ -250,7 +292,6 @@ final class SessionTab: ObservableObject, Identifiable {
     private init(restoringInto config: SessionConfig, app: AppState) {
         self.config = config
         self.app = app
-        self.localTerminal = nil
         self.isFileBrowserOnly = false
         root = .empty(id: UUID())
     }
@@ -283,19 +324,22 @@ final class SessionTab: ObservableObject, Identifiable {
         return true
     }
 
-    /// Local shell tab: no SSH, no split tree — just this Mac's login shell.
+    /// Local shell tab: this Mac's login shell, as an ordinary leaf.
+    ///
+    /// It used to park a never-connected TerminalTab in the tree and render
+    /// `localTerminal` around it — the very placeholder PaneContent was
+    /// introduced to remove. That placeholder is why a local shell could not be
+    /// split: `isSinglePane` had to claim the tab had no tree, because the tree
+    /// it had was a lie.
     init(localShellIn directory: String?, app: AppState) {
         self.config = SessionConfig(name: "Local", host: "localhost", username: NSUserName())
         self.app = app
-        let local = LocalTerminalTab(app: app)
-        self.localTerminal = local
         self.isFileBrowserOnly = false
-        // Placeholder leaf keeps the Node tree non-optional; it is never shown
-        // for local tabs (ContentView renders localTerminal instead).
-        root = .leaf(.terminal(TerminalTab(config: config, app: app)))
-        childObserver = local.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }
+        let local = LocalTerminalTab(app: app)
+        let content = PaneContent.localShell(local)
+        root = .leaf(content)
+        focusedPaneID = local.id
+        register(content)
         local.start(directory: directory)
     }
 
@@ -303,7 +347,6 @@ final class SessionTab: ObservableObject, Identifiable {
     init(vnc config: SessionConfig, app: AppState) {
         self.config = config
         self.app = app
-        self.localTerminal = nil
         self.isFileBrowserOnly = false
         let vncTab = VNCTab(config: config, app: app)
         root = .leaf(.vnc(vncTab))
@@ -316,7 +359,6 @@ final class SessionTab: ObservableObject, Identifiable {
     init(rdp config: SessionConfig, app: AppState) {
         self.config = config
         self.app = app
-        self.localTerminal = nil
         self.isFileBrowserOnly = false
         let rdpTab = RDPTab(config: config, app: app)
         root = .leaf(.rdp(rdpTab))
@@ -330,7 +372,6 @@ final class SessionTab: ObservableObject, Identifiable {
     init(files config: SessionConfig, app: AppState) {
         self.config = config
         self.app = app
-        self.localTerminal = nil
         self.isFileBrowserOnly = true
         // Placeholder leaf keeps the Node tree non-optional; never rendered.
         root = .leaf(.terminal(TerminalTab(config: config, app: app)))
@@ -343,7 +384,6 @@ final class SessionTab: ObservableObject, Identifiable {
     init(web config: SessionConfig, app: AppState) {
         self.config = config
         self.app = app
-        self.localTerminal = nil
         self.isFileBrowserOnly = false
         let webTab = WebTab(config: config, app: app)
         root = .leaf(.web(webTab))
@@ -377,7 +417,12 @@ final class SessionTab: ObservableObject, Identifiable {
         return panes.first
     }
 
-    var isLocal: Bool { localTerminal != nil }
+    /// True only when this tab is nothing BUT local shells. "Contains one"
+    /// would give a mixed tab the local icon and report it to the CLI as local.
+    var isLocal: Bool {
+        let all = Self.contents(root)
+        return !all.isEmpty && all.allSatisfy { $0.localShell != nil }
+    }
 
     /// What this tab is, for the chip's icon. Local shells are terminals too.
     var kind: SessionKind {
@@ -387,6 +432,7 @@ final class SessionTab: ObservableObject, Identifiable {
             case .vnc: return .vnc
             case .rdp: return .rdp
             case .web: return .web
+            case .localShell: return .ssh
             case .terminal(let pane):
                 if !isSinglePane { return pane.config.sessionKind }
             }
@@ -403,7 +449,7 @@ final class SessionTab: ObservableObject, Identifiable {
     /// No pane tree at all: a local shell or a bare file browser. Everything
     /// else — including a remote desktop — is one or more leaves now.
     var isSinglePane: Bool {
-        localTerminal != nil || isFileBrowserOnly
+        isFileBrowserOnly
     }
 
     /// Whether anything here shovels bytes. What logging, search, ZMODEM,
@@ -415,7 +461,6 @@ final class SessionTab: ObservableObject, Identifiable {
     var canSplit: Bool { !isSinglePane }
 
     var title: String {
-        if let localTerminal { return localTerminal.title }
         if isFileBrowserOnly { return config.name }
         // No per-kind cases: `focusedContent` already names whichever pane is
         // in front, and asking "does this tab contain a VNC" — which is what
@@ -429,11 +474,11 @@ final class SessionTab: ObservableObject, Identifiable {
     /// Best state across panes, for the tab chip's status dot.
     /// The on-screen view the Overview thumbnails, or nil for a file browser.
     var snapshotView: NSView? {
-        if let localTerminal { return localTerminal.termView }
         // The pane in front, whatever it is — a thumbnail of the desktop beside
         // the shell should show whichever one you were last looking at.
         switch focusedContent {
         case .terminal(let pane): return pane.termView
+        case .localShell(let pane): return pane.termView
         case .vnc(let pane): return pane.container
         case .rdp(let pane): return pane.container
         case .web(let pane): return pane.webView
@@ -503,7 +548,6 @@ final class SessionTab: ObservableObject, Identifiable {
     }
 
     var aggregateState: TerminalTab.State {
-        if let localTerminal { return localTerminal.state }
         if isFileBrowserOnly { return fileBrowserState }
         // Every leaf, not only the terminals: a tab holding a shell and a
         // remote desktop is connected when either of them is.
@@ -517,10 +561,32 @@ final class SessionTab: ObservableObject, Identifiable {
 
     /// Split the focused pane with a NEW connection. By default duplicates the
     /// focused pane's session; pass a config to connect somewhere else.
+    /// Put one of this Mac's shells beside whatever has focus. Works from any
+    /// tab: a shell next to a remote desktop is as reasonable as next to SSH.
+    func splitFocusedWithLocalShell(_ axis: Axis) {
+        guard let app, let target = focusedContent, !isSinglePane else { return }
+        let local = LocalTerminalTab(app: app)
+        let content = PaneContent.localShell(local)
+        register(content)
+        root = Self.replacing(root, paneID: target.id) { leaf in
+            .split(axis: axis, id: UUID(), first: leaf, second: .leaf(content))
+        }
+        focusedPaneID = local.id
+        local.start(directory: nil)
+        settleLayout()
+    }
+
     func splitFocused(_ axis: Axis, config newConfig: SessionConfig? = nil) {
         // The pane being split may not be a terminal — splitting a shell INTO a
         // remote desktop tab is the same gesture from the other side.
         guard let app, let target = focusedContent else { return }
+        // Duplicating a local shell means another local shell. The tab's config
+        // is a stand-in naming "localhost", so the generic path below would
+        // open SSH to this Mac and sit there connecting — a blank pane.
+        if newConfig == nil, target.localShell != nil {
+            splitFocusedWithLocalShell(axis)
+            return
+        }
         let paneConfig = newConfig ?? target.terminal?.config ?? config
         // A pane is a terminal, so it can only ever hold an SSH session. Handed
         // a VNC or RDP config it would open *SSH* to the remote-desktop port and
@@ -668,6 +734,8 @@ final class SessionTab: ObservableObject, Identifiable {
     private func connect(_ content: PaneContent) {
         switch content {
         case .terminal(let pane): pane.connect()
+        // Started at creation — its shell is a process, not a dial.
+        case .localShell: break
         case .vnc(let pane): pane.connect()
         case .rdp(let pane): pane.connect()
         case .web(let pane): pane.start()
@@ -699,11 +767,7 @@ final class SessionTab: ObservableObject, Identifiable {
     }
 
     func disconnectAll() {
-        localTerminal?.disconnect()
-        vnc?.disconnect()
-        rdp?.disconnect()
-        web?.disconnect()
-        for pane in panes { pane.disconnect() }
+        for content in Self.contents(root) { content.disconnect() }
         paneObservers.removeAll()
         closeSFTPBrowsers()
     }
@@ -723,7 +787,10 @@ final class SessionTab: ObservableObject, Identifiable {
     /// True when this tab can move files at all: it needs a session whose
     /// credentials open a file service. A local shell, VNC or RDP tab cannot.
     var supportsTransfer: Bool {
-        guard localTerminal == nil, vnc == nil, rdp == nil else { return false }
+        guard vnc == nil, rdp == nil else { return false }
+        // Asked of the focused pane: a shell beside an SSH pane must not cost
+        // the SSH pane its file transfer.
+        guard focusedContent?.localShell == nil else { return false }
         return transferConfig.sessionKind == .ftp
             || transferConfig.sessionKind.authenticatesOverSSH
     }
@@ -848,7 +915,7 @@ final class SessionTab: ObservableObject, Identifiable {
     /// badge and ⌥⌘U.
     var attentionCount: Int {
         panes.filter(\.needsAttention).count
-            + (localTerminal?.needsAttention == true ? 1 : 0)
+            + Self.contents(root).compactMap(\.localShell).filter(\.needsAttention).count
     }
 
     // MARK: - Internals

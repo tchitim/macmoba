@@ -164,6 +164,10 @@ struct SplitMenu: View {
                     Button("Duplicate Current Session") {
                         window.splitSelected(axis)
                     }
+                    // Not a vault session, so it is not in the list below.
+                    Button("New Local Terminal") {
+                        window.splitWithLocalShell(axis)
+                    }
                     // Every kind, not just terminals: a remote desktop beside a
                     // shell is exactly what people ask splits for. Serial is the
                     // one exception — one port, one connection.
@@ -283,11 +287,6 @@ struct TerminalPane: View {
             TransferPanelView(local: panes.local, remote: panes.remote,
                               controller: tab.transferController)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let local = tab.localTerminal {
-            LocalTerminalHostView(tab: local)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(nsColor: app.theme.backgroundColor))
-                .id(tab.id)
         } else if tab.isFileBrowserOnly {
             // The panel fills the tab: there is no terminal beside it, so it
             // gets no width cap and no HSplitView divider.
@@ -343,9 +342,10 @@ struct PaneNodeView: View {
                 onClose: { window.closePane(pane, in: tab) }
             )
         case .leaf(let content):
-            // A remote desktop or a web page sharing the split with a shell.
-            // The chrome is the leaf's, the content is its own view — nothing
-            // here types, logs or broadcasts, which the type already says.
+            // A remote desktop, a web page, or this Mac's own shell sharing the
+            // split. The chrome is the leaf's, the content is its own view.
+            // None of these carry an SSH connection, which is what the logging,
+            // broadcast and transfer features actually key off.
             NonTerminalLeafView(content: content, tab: tab)
         case .empty:
             // The gap beside a lone terminal on the last row. Plain background
@@ -391,6 +391,9 @@ struct NonTerminalLeafView: View {
             case .vnc(let vnc): VNCPaneView(tab: vnc)
             case .rdp(let rdp): RDPPaneView(tab: rdp)
             case .web(let web): WebPaneView(tab: web)
+            case .localShell(let local):
+                LocalTerminalHostView(tab: local)
+                    .background(Color(nsColor: app.theme.backgroundColor))
             case .terminal: EmptyView()   // handled by PaneLeafView
             }
         }

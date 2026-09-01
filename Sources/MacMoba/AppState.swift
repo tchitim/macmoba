@@ -135,7 +135,7 @@ final class AppState: ObservableObject {
         didSet {
             UserDefaults.standard.set(terminalMetalRenderer, forKey: TerminalDefaults.metalRendererKey)
             for tab in allTabs {
-                if let local = tab.localTerminal {
+                for local in tab.localShells {
                     TerminalRendering.apply(to: local.termView, enabled: terminalMetalRenderer)
                 }
                 for pane in tab.panes {
@@ -150,7 +150,7 @@ final class AppState: ObservableObject {
         didSet {
             UserDefaults.standard.set(terminalFontSize, forKey: "terminalFontSize")
             for tab in allTabs {
-                tab.localTerminal?.applyFont(size: terminalFontSize)
+                for local in tab.localShells { local.applyFont(size: terminalFontSize) }
                 for pane in tab.panes { pane.applyFont(size: terminalFontSize) }
             }
         }
@@ -216,7 +216,7 @@ final class AppState: ObservableObject {
     func applyThemeToAllPanes() {
         let theme = self.theme
         for tab in allTabs {
-            tab.localTerminal.map { theme.apply(to: $0.termView) }
+            for local in tab.localShells { theme.apply(to: local.termView) }
             for pane in tab.panes { theme.apply(to: pane.termView) }
         }
     }
