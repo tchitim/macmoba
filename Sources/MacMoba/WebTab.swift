@@ -349,7 +349,7 @@ extension WebTab: WKNavigationDelegate {
             ?? (nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
             ?? "unknown"
         tlsLog.info("""
-            provisional navigation failed: \(nsError.domain, privacy: .public) \(nsError.code)             failingURL=\(failingURL, privacy: .public)             webViewURL=\(webView.url?.absoluteString ?? "none", privacy: .public)             proxied=\(self.proxyDescription ?? "no")             \(error.localizedDescription, privacy: .public)
+            provisional navigation failed: \(nsError.domain, privacy: .public) \(nsError.code)             failingURL=\(failingURL, privacy: .public)             webViewURL=\(webView.url?.absoluteString ?? "none", privacy: .public)             proxied=\(self.proxyDescription ?? "no", privacy: .public)             \(error.localizedDescription, privacy: .public)
             """)
         statusLine = error.localizedDescription
     }

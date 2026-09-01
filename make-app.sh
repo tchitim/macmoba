@@ -33,7 +33,7 @@ swift build -c release
 
 APP=MacMoba.app
 BIN=.build/release/MacMoba
-VERSION=2.19
+VERSION=2.20
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -127,6 +127,27 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>MacMoba</string>
+    <!-- Web tabs exist to reach internal consoles — an OpenShift console, a
+         Cockpit, a switch's admin UI — which are almost always self-signed or
+         behind a private CA. App Transport Security refuses those, and this is
+         the part that is not obvious: an ATS refusal CANNOT be overridden from
+         the authentication challenge. The trust challenge still arrives, the
+         credential is still accepted, and the load fails anyway with -1202.
+         Measured: the same page loads from a bare binary (no Info.plist, so no
+         ATS) and fails from an app bundle, unless this key is set. Note that
+         ATS is skipped for IP-literal URLs, so testing against 127.0.0.1 hides
+         this entirely.
+
+         InWebContent, not NSAllowsArbitraryLoads: this exempts only content
+         loaded into web views. The app's own network calls keep ATS. What
+         actually protects a web tab is the per-host certificate pin in
+         web_certs.json, which is unaffected by this and still refuses a
+         certificate that changes. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoadsInWebContent</key>
+        <true/>
+    </dict>
     <!-- Lets a .rdp file be opened from the Finder. "Viewer" rather than
          "Editor": MacMoba connects with these, it never writes them. -->
     <key>CFBundleDocumentTypes</key>
