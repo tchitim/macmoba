@@ -91,11 +91,23 @@ extension LocalTerminalTab: LocalProcessTerminalViewDelegate {
 struct LocalTerminalHostView: NSViewRepresentable {
     let tab: LocalTerminalTab
 
-    func makeNSView(context: Context) -> LocalProcessTerminalView {
-        let view = tab.termView
-        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
-        return view
+    /// The same self-healing container an SSH pane uses, for the same reason.
+    ///
+    /// This used to hand SwiftUI the terminal view itself, which was safe only
+    /// while a local shell was a whole tab and never moved. Now that it is an
+    /// ordinary pane it gets re-parented — breaking a split apart builds a new
+    /// host for the same view — and a bare view goes wherever the LAST host
+    /// put it. If SwiftUI then keeps an earlier host on screen, the pane draws
+    /// nothing: right border, right title, blank middle.
+    func makeNSView(context: Context) -> PaneContainerView {
+        let container = PaneContainerView(termView: tab.termView)
+        DispatchQueue.main.async {
+            container.window?.makeFirstResponder(container.termView)
+        }
+        return container
     }
 
-    func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {}
+    func updateNSView(_ nsView: PaneContainerView, context: Context) {
+        nsView.adoptTerminal()
+    }
 }

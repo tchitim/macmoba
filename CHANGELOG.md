@@ -4,6 +4,20 @@ Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.
 
+## 2.22
+
+**Fix: a local shell went blank after Break Apart into Tabs.**
+It was handed to SwiftUI as the terminal view itself, which was safe only while
+a local shell was always a whole tab and never moved. As a pane it gets
+re-parented, and a bare view lives wherever the *last* host put it — so if an
+earlier host stays on screen, the pane draws nothing. It now uses the same
+self-healing container an SSH pane has used all along.
+
+修正:解散分割之後本機終端機一片空白。它原本是直接把 terminal view 本身交給 SwiftUI,
+那在「本機 shell 永遠是一整個分頁、不會被搬動」的前提下才安全。變成 pane 之後它會被重新掛載,
+而一個裸的 view 只會待在**最後**一個掛載它的地方——如果 SwiftUI 留在畫面上的是更早的那一個,
+這一格就什麼都不畫。現在改用 SSH pane 一直在用的那個會自我修復的容器。
+
 ## 2.21
 
 **Local terminals can be split, and can share a tab with anything else.**
