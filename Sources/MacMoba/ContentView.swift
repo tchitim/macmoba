@@ -392,7 +392,7 @@ struct NonTerminalLeafView: View {
             case .rdp(let rdp): RDPPaneView(tab: rdp)
             case .web(let web): WebPaneView(tab: web)
             case .localShell(let local):
-                LocalTerminalHostView(tab: local)
+                LocalTerminalHostView(tab: local, onFocus: { tab.focusedPaneID = local.id })
                     .background(Color(nsColor: app.theme.backgroundColor))
                     .overlay { DeadShellOverlay(shell: local) }
             case .terminal: EmptyView()   // handled by PaneLeafView

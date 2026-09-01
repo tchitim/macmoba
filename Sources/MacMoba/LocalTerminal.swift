@@ -114,6 +114,11 @@ extension LocalTerminalTab: LocalProcessTerminalViewDelegate {
 
 struct LocalTerminalHostView: NSViewRepresentable {
     let tab: LocalTerminalTab
+    /// Called when this pane takes the keyboard, so the focus ring and the
+    /// tab's idea of the focused pane follow the click — the same wiring an
+    /// SSH pane has. A SwiftUI tap gesture cannot do this: the terminal view
+    /// consumes the click before SwiftUI sees it.
+    var onFocus: () -> Void = {}
 
     /// The same self-healing container an SSH pane uses, for the same reason.
     ///
@@ -125,6 +130,7 @@ struct LocalTerminalHostView: NSViewRepresentable {
     /// nothing: right border, right title, blank middle.
     func makeNSView(context: Context) -> PaneContainerView {
         let container = PaneContainerView(termView: tab.termView)
+        container.onFocusGained = onFocus
         DispatchQueue.main.async {
             container.window?.makeFirstResponder(container.termView)
         }

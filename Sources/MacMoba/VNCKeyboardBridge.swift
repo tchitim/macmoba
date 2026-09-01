@@ -416,6 +416,16 @@ final class VNCKeyboardBridge: ObservableObject {
             PopSymbolicHotKeyMode(previousHotKeyMode)
             self.previousHotKeyMode = nil
         }
+        // Hand the keyboard back. The grab took first responder explicitly
+        // (see handleMouseDown) and nothing gave it up — so after ⌃⌥ the remote
+        // desktop still WAS the first responder, and every keystroke went on
+        // matching the forwarding guard and travelling to the remote. Invisible
+        // while a desktop owned a whole tab, because leaving it meant switching
+        // tabs and taking the view out of the window; with a shell beside it in
+        // one tab the keyboard simply stayed pointed at the desktop.
+        if let view = grabbedView, view.window?.firstResponder === view {
+            view.window?.makeFirstResponder(nil)
+        }
         grabbedView = nil
         chordGesture.reset()
         isGrabbed = false

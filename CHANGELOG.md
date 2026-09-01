@@ -4,6 +4,22 @@ Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.
 
+## 2.24
+
+**Fix: after leaving a captured remote desktop, the shell beside it would not type.**
+Two causes, both only reachable now that a desktop and a shell can share one tab.
+Capturing input made the desktop the first responder and releasing it never gave
+that back, so keystrokes kept matching the forward-to-remote rule. And clicking a
+terminal did not take the keyboard either — AppKit does not move first responder
+on a click, and neither SwiftTerm nor this app was asking it to; panes got the
+keyboard only when first built. Releasing now hands it back, clicking a terminal
+claims it, and the focus ring follows the click.
+
+修正:從已擷取的遠端桌面離開後,旁邊的 shell 打不了字。兩個原因,都只有在桌面和 shell 共用同一個分頁時才會踩到。
+擷取輸入時會把桌面設為 first responder,而放開擷取從來沒有把它交還,所以按鍵仍然符合「轉送到遠端」的條件;
+而點擊終端機也拿不回鍵盤——AppKit 不會因為點擊就移動 first responder,SwiftTerm 和這個 App 都沒有主動要求,
+pane 只有在第一次建立時才拿到鍵盤。現在放開擷取會交還鍵盤,點擊終端機會取得鍵盤,焦點框也會跟著點擊走。
+
 ## 2.23
 
 **Fix: Esc did nothing after a local shell exited.**

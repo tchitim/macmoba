@@ -199,6 +199,19 @@ enum TerminalClipboard {
 /// SSH panes. `LocalProcessTerminalView` is a separate SwiftTerm subclass, so
 /// the same overrides are repeated below rather than shared by inheritance.
 final class ClipboardTerminalView: TerminalView {
+    /// Clicking a terminal must point the keyboard at it.
+    ///
+    /// AppKit does not move first responder on a click by itself, and
+    /// SwiftTerm's mouseDown does not ask for it either — panes got the
+    /// keyboard only when their host view was first built. That was enough
+    /// while a tab held one kind of thing; in a split with a remote desktop,
+    /// whoever took first responder last kept it, so clicking back onto a shell
+    /// changed nothing and the shell looked dead.
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
+    }
+
     override func mouseUp(with event: NSEvent) {
         super.mouseUp(with: event)
         TerminalClipboard.copyOnSelectIfEnabled(self)
@@ -245,6 +258,19 @@ final class ClipboardTerminalView: TerminalView {
 
 /// Local shell tabs — same behaviour, different SwiftTerm base class.
 final class ClipboardLocalTerminalView: LocalProcessTerminalView {
+    /// Clicking a terminal must point the keyboard at it.
+    ///
+    /// AppKit does not move first responder on a click by itself, and
+    /// SwiftTerm's mouseDown does not ask for it either — panes got the
+    /// keyboard only when their host view was first built. That was enough
+    /// while a tab held one kind of thing; in a split with a remote desktop,
+    /// whoever took first responder last kept it, so clicking back onto a shell
+    /// changed nothing and the shell looked dead.
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
+    }
+
     /// The tab this view belongs to, so a keystroke at a dead shell can reach
     /// the two ways out of one. Weak: the tab owns the view.
     weak var owner: LocalTerminalTab?
