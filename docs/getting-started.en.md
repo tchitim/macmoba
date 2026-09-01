@@ -128,6 +128,69 @@ Point your browser's SOCKS5 setting at `127.0.0.1:1080`.
 > ⚠️ **macOS does something that misleads people here**: it bypasses the proxy entirely for **loopback and for addresses on your own subnet**. So some addresses connect directly however carefully the tunnel is configured. MacMoba says so plainly — the toolbar turns orange and reads `not via bastion`, rather than showing a "via the bastion" badge that is not true.
 
 
+### Internal consoles with self-signed certificates
+
+Internal sites are rarely signed by a public CA. An OpenShift console, a Cockpit,
+an iDRAC or iLO, a switch's admin UI — nearly all present a self-signed or
+private-CA certificate, and browsers refuse them outright.
+
+MacMoba does not answer this by ignoring TLS errors, which would turn the tab
+into an unauthenticated channel forever. It takes the same bargain SSH host keys
+and RDP certificates already take here: **see the fingerprint, pin it once, pass
+silently afterwards — and ask again if it ever changes.**
+
+The **first connection** asks:
+
+```
+Trust the certificate for console.example.internal?
+
+This server's certificate is not signed by an authority your Mac trusts…
+
+Common name: *.apps.example.internal
+SHA-256: 7B:F6:8D:B5:4C:53:…:0D:78
+```
+
+**Actually compare the fingerprint** — it is the only step in this mechanism that
+carries any weight. On the server:
+
+```bash
+openssl s_client -connect console.example.internal:443 \
+  -servername console.example.internal </dev/null 2>/dev/null \
+  | openssl x509 -noout -fingerprint -sha256
+```
+
+It prints exactly the format the dialog shows (colon-separated uppercase hex), so
+the two can be compared directly.
+
+After **Trust and Continue**, the fingerprint is stored in
+`~/Library/Application Support/MacMoba/web_certs.json` and that host stops asking.
+
+**If the certificate later changes**, a red warning shows both the stored and the
+offered fingerprint. That can mean the server was rebuilt — or that something is
+impersonating it. **This prompt is never skipped automatically**, no matter what
+you trusted before.
+
+**To revoke**: main menu → **Trusted Hosts** → **Web Certificates**, alongside SSH
+host keys and RDP certificates. The next connection asks again.
+
+> **Being asked a second time at login is normal.** Some consoles hand you to a
+> different hostname to authenticate — OpenShift redirects to
+> `oauth-openshift.apps.…`. That is a **different host**, so it is pinned
+> separately.
+
+> **What protects you here:** with this feature on, web-view content is no longer
+> covered by macOS App Transport Security (the app's own network calls still are).
+> What actually protects these tabs is the certificate fingerprint you checked
+> yourself — for an internal console that is worth considerably more than a
+> blanket rule the server was never going to satisfy.
+
+If a connection fails and you want to know why, every certificate decision is
+recorded:
+
+```bash
+log show --predicate 'subsystem == "dev.macmoba.tls"' --last 10m --info
+```
+
 ## Setting up the CLI
 
 The app bundles a `macmoba` binary so a terminal, a script or an AI agent on a remote host can drive MacMoba. Link it somewhere on your PATH:

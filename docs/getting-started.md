@@ -128,6 +128,49 @@ tmux new -A -s %name%
 > ⚠️ **macOS 有一個會誤導人的行為**:系統對 **loopback 與本機同網段**的位址一律**略過 proxy**。所以某些位址就算你設了隧道，實際上是直連的。MacMoba 的網頁分頁會照實說——工具列變橘色並標示 `not via bastion`，而不是掛一個假的「已透過跳板」標籤。
 
 
+### 自簽憑證的內部主控台
+
+內部網站幾乎都不是公開 CA 簽的——OpenShift console、Cockpit、iDRAC/iLO、交換器管理介面,拿到的多半是自簽或私有 CA 的憑證。瀏覽器對這種憑證一律拒絕。
+
+MacMoba 的做法不是「忽略 TLS 錯誤」(那等於把這個分頁永遠變成未驗證通道),而是跟 SSH host key、RDP 憑證同一套:**看過指紋、釘選一次,之後安靜通過;憑證變了就再問**。
+
+**第一次連線**會跳出:
+
+```
+Trust the certificate for console.example.internal?
+
+This server's certificate is not signed by an authority your Mac trusts…
+
+Common name: *.apps.example.internal
+SHA-256: 7B:F6:8D:B5:4C:53:…:0D:78
+```
+
+**請真的去對照指紋**——這是整個機制唯一有意義的一步。在伺服器上跑:
+
+```bash
+openssl s_client -connect console.example.internal:443 \
+  -servername console.example.internal </dev/null 2>/dev/null \
+  | openssl x509 -noout -fingerprint -sha256
+```
+
+輸出的格式跟對話框裡完全一樣(冒號分隔大寫十六進位),可以直接比對。
+
+按 **Trust and Continue** 之後,指紋會存進 `~/Library/Application Support/MacMoba/web_certs.json`,以後這台主機不再詢問。
+
+**憑證日後變了**,會跳紅色警告並列出新舊兩個指紋。這可能是伺服器重建,也可能是有人在中間——**這個提示永遠不會被自動略過**,即使你先前信任過。
+
+**撤銷**:主選單 → **Trusted Hosts** → **Web Certificates**,跟 SSH 金鑰、RDP 憑證並列。撤銷後下次連線會重新詢問。
+
+> **登入時多問一次是正常的。** 有些主控台會把你轉到另一個主機名稱做認證(例如 OpenShift 會轉到 `oauth-openshift.apps.…`)。那是**不同的主機**,所以會各自詢問一次。
+
+> **這裡保護你的是什麼:** 開啟這個功能後,網頁內容不再受 macOS 的 App Transport Security 管(App 自己的網路請求仍然受管)。真正在保護這些分頁的,是你親手確認過的那張憑證指紋——對內部主控台來說,這比一條它本來就通不過的通用規則有意義得多。
+
+如果連線失敗而你想知道發生什麼,每一次憑證判斷都有紀錄:
+
+```bash
+log show --predicate 'subsystem == "dev.macmoba.tls"' --last 10m --info
+```
+
 ## CLI 設定
 
 App 內附一支 `macmoba`，讓終端機、腳本或遠端的 AI agent 驅動 MacMoba。建立一個 alias 或 symlink：
