@@ -45,3 +45,40 @@ public enum WebCertificateTrust {
             : .askChanged(from: stored)
     }
 }
+
+/// What to answer a TLS challenge with, decided in one place because the
+/// answer must be given *immediately*.
+///
+/// This is the rule the first version got wrong: a challenge left open while
+/// someone reads a dialog is abandoned by WebKit — measured against a real
+/// self-signed server, answering even 0.2s late leaves the navigation dead, so
+/// clicking "trust" appeared to do nothing. Every case below is therefore a
+/// reply that can be sent on the spot; asking the user is something that
+/// happens *after* the reply, followed by a reload.
+public enum WebCertificateAction: Equatable {
+    /// The system is satisfied — let the default handling run.
+    case useSystemDefault
+    /// Pinned earlier and unchanged.
+    case accept
+    /// Nothing usable to identify the server. Refuse; there is nothing to ask.
+    case decline
+    /// Refuse this attempt, then put it to the user and reload if they accept.
+    case declineThenAsk(WebCertificateTrust.Outcome)
+}
+
+public extension WebCertificateTrust {
+    static func action(systemTrusted: Bool,
+                       stored: String?,
+                       offered: String?) -> WebCertificateAction {
+        // Asked first: a certificate the system accepts must never produce a
+        // dialog. Prompting on the ordinary case is what teaches people to
+        // click through the one prompt that matters.
+        if systemTrusted { return .useSystemDefault }
+        // An empty chain must fail closed rather than be pinned as "".
+        guard let offered, !offered.isEmpty else { return .decline }
+        switch outcome(stored: stored, offered: offered) {
+        case .trusted: return .accept
+        case let other: return .declineThenAsk(other)
+        }
+    }
+}

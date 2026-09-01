@@ -32,6 +32,13 @@ final class WebTab: NSObject, ObservableObject, Identifiable {
 
     private weak var app: AppState?
     private var forward: DynamicForward?
+    /// A certificate decision waiting to be put to the user. WebKit issues
+    /// several challenges for one navigation, so without this the same server
+    /// would stack several identical alerts.
+    private var certificateDecisionPending = false
+    /// Set while we cancel a challenge on purpose, so the resulting
+    /// "cancelled" error is not reported as if the load had gone wrong.
+    private var cancelledForCertificatePrompt = false
     private var observations: [NSKeyValueObservation] = []
     private(set) var webView: WKWebView?
 
@@ -248,44 +255,75 @@ extension WebTab: WKNavigationDelegate {
             completionHandler(.performDefaultHandling, nil)
             return
         }
-        // A certificate the system is happy with needs no ceremony. Prompting
-        // for those would teach the habit of clicking through this dialog,
-        // which is exactly what makes the dangerous one useless.
-        if WebCertificate.isSystemTrusted(trust) {
-            completionHandler(.performDefaultHandling, nil)
-            return
-        }
-        guard let identity = WebCertificate.identity(of: trust) else {
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
-        }
-
         let store = WebCertificateStore.shared
         let host = space.host
         let port = space.port
-        let outcome = WebCertificateTrust.outcome(
+        let identity = WebCertificate.identity(of: trust)
+        let action = WebCertificateTrust.action(
+            systemTrusted: WebCertificate.isSystemTrusted(trust),
             stored: store.storedFingerprint(host: host, port: port),
-            offered: identity.fingerprint)
+            offered: identity?.fingerprint)
 
-        if outcome == .trusted {
+        let outcome: WebCertificateTrust.Outcome
+        switch action {
+        case .useSystemDefault:
+            completionHandler(.performDefaultHandling, nil)
+            return
+        case .accept:
             completionHandler(.useCredential, URLCredential(trust: trust))
             return
-        }
-        let accepted = WebCertificatePrompt.ask(host: host,
-                                                commonName: identity.commonName,
-                                                fingerprint: identity.fingerprint,
-                                                reason: outcome)
-        if accepted {
-            store.store(fingerprint: identity.fingerprint, host: host, port: port)
-            completionHandler(.useCredential, URLCredential(trust: trust))
-        } else {
-            statusLine = "Certificate for \(host) was not trusted."
+        case .decline:
             completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        case .declineThenAsk(let reason):
+            outcome = reason
+        }
+        guard let identity else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        // Answer WebKit *now*. A challenge that is left open while a person
+        // reads an alert is abandoned: measured against a real self-signed
+        // server, answering even 0.2s late leaves the navigation dead — which
+        // is why trusting the certificate appeared to do nothing at all. So
+        // decline this attempt immediately, ask afterwards, and reload; the
+        // reload finds the pin and answers straight away.
+        cancelledForCertificatePrompt = true
+        completionHandler(.cancelAuthenticationChallenge, nil)
+
+        guard !certificateDecisionPending else { return }
+        certificateDecisionPending = true
+        let url = webView.url ?? WebAddress.url(for: addressText)
+
+        // Off this turn of the run loop, so the alert cannot run inside the
+        // delegate callback WebKit is still unwinding.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            defer { self.certificateDecisionPending = false }
+            let accepted = WebCertificatePrompt.ask(host: host,
+                                                    commonName: identity.commonName,
+                                                    fingerprint: identity.fingerprint,
+                                                    reason: outcome)
+            guard accepted else {
+                self.statusLine = "Certificate for \(host) was not trusted."
+                return
+            }
+            store.store(fingerprint: identity.fingerprint, host: host, port: port)
+            self.statusLine = ""
+            if let url { self.load(url) } else { self.webView?.reload() }
         }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) {
+        // Our own doing: we cancelled the challenge so the certificate could be
+        // put to the user. Saying "cancelled" here would report the mechanism
+        // working as if it had failed.
+        if cancelledForCertificatePrompt {
+            cancelledForCertificatePrompt = false
+            if (error as NSError).code == NSURLErrorCancelled { return }
+        }
         statusLine = error.localizedDescription
     }
 

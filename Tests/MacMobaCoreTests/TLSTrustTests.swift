@@ -44,4 +44,45 @@ final class TLSTrustTests: XCTestCase {
         XCTAssertEqual(WebCertificateTrust.outcome(stored: "aa:bb", offered: "AA:BB"),
                        .trusted)
     }
+
+    // MARK: - The reply must always be immediate
+
+    func testASystemTrustedCertificateIsNeverQuestioned() {
+        XCTAssertEqual(WebCertificateTrust.action(systemTrusted: true, stored: nil,
+                                                  offered: "AA:BB"),
+                       .useSystemDefault)
+    }
+
+    func testAPinnedCertificateIsAcceptedOnTheSpot() {
+        XCTAssertEqual(WebCertificateTrust.action(systemTrusted: false, stored: "AA:BB",
+                                                  offered: "AA:BB"),
+                       .accept)
+    }
+
+    /// The regression this table exists for: an unpinned certificate must be
+    /// DECLINED immediately and the user asked afterwards. Holding the
+    /// challenge open while the alert is on screen leaves the navigation dead,
+    /// so "Trust" appeared to do nothing at all.
+    func testAnUnknownCertificateIsDeclinedFirstAndAskedAfterwards() {
+        XCTAssertEqual(WebCertificateTrust.action(systemTrusted: false, stored: nil,
+                                                  offered: "AA:BB"),
+                       .declineThenAsk(.askFirstTime))
+    }
+
+    func testAChangedCertificateIsAlsoDeclinedFirst() {
+        XCTAssertEqual(WebCertificateTrust.action(systemTrusted: false, stored: "AA:BB",
+                                                  offered: "CC:DD"),
+                       .declineThenAsk(.askChanged(from: "AA:BB")))
+    }
+
+    /// No certificate to show means there is nothing to ask about: refuse
+    /// rather than pin an empty fingerprint that everything would then match.
+    func testAnEmptyChainIsRefusedWithoutAsking() {
+        XCTAssertEqual(WebCertificateTrust.action(systemTrusted: false, stored: nil,
+                                                  offered: nil),
+                       .decline)
+        XCTAssertEqual(WebCertificateTrust.action(systemTrusted: false, stored: nil,
+                                                  offered: ""),
+                       .decline)
+    }
 }
