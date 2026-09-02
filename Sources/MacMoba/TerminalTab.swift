@@ -87,7 +87,11 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         self.title = config.name
         let view = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
         self.termView = view
-        self.engine = SwiftTermEngine(view: view)
+        // The SwiftTerm view is built either way: search and themes still read
+        // it directly, and an unused one costs a view rather than a session.
+        self.engine = TerminalDefaults.usesGhosttyEngine()
+            ? GhosttyEngine()
+            : SwiftTermEngine(view: view)
         // SwiftTerm keeps 500 lines unless told otherwise — a few seconds of a
         // build log.
         engine.engineSetScrollback(TerminalDefaults.scrollback())
@@ -202,8 +206,14 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
                 }
                 self.connection = conn
                 self.state = .connected
-                // The view may have been laid out while we were connecting.
-                conn.resize(cols: grid.cols, rows: grid.rows)
+                // The view may have been laid out while we were connecting —
+                // so ask the engine again rather than resending the size read
+                // before the dial. With SwiftTerm the two are almost always
+                // equal, because its view has a real size straight away; a
+                // libghostty surface has not measured itself until it reaches
+                // a window, so the stale value left every session at 80x24.
+                let settled = self.engine.engineGrid
+                conn.resize(cols: settled.cols, rows: settled.rows)
                 self.runOnConnectCommands()
                 // Expect/send runs off the receive thread as output arrives;
                 // arm it here so the first prompt is already being watched for.
@@ -641,11 +651,13 @@ extension TerminalTab {
 /// Hosts the terminal view and reports focus: SwiftTerm's responder overrides
 /// aren't `open`, so focus is detected by observing the window's firstResponder.
 final class PaneContainerView: NSView {
-    let termView: TerminalView
+    /// Whatever the engine draws into — SwiftTerm's view or libghostty's
+    /// hosted surface. Typed as NSView so this container never has to know.
+    let termView: NSView
     var onFocusGained: (() -> Void)?
     private var observation: NSKeyValueObservation?
 
-    init(termView: TerminalView) {
+    init(termView: NSView) {
         self.termView = termView
         super.init(frame: .zero)
         adoptTerminal()
@@ -721,10 +733,10 @@ struct TerminalHostView: NSViewRepresentable {
     let tab: TerminalTab
 
     func makeNSView(context: Context) -> PaneContainerView {
-        let container = PaneContainerView(termView: tab.termView)
+        let container = PaneContainerView(termView: tab.engine.engineView)
         container.onFocusGained = { [weak tab] in tab?.onFocused?() }
-        DispatchQueue.main.async {
-            container.window?.makeFirstResponder(container.termView)
+        DispatchQueue.main.async { [weak tab] in
+            tab?.engine.engineTakeFocus()
         }
         return container
     }

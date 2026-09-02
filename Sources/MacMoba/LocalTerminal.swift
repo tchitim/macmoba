@@ -134,10 +134,10 @@ struct LocalTerminalHostView: NSViewRepresentable {
     /// put it. If SwiftUI then keeps an earlier host on screen, the pane draws
     /// nothing: right border, right title, blank middle.
     func makeNSView(context: Context) -> PaneContainerView {
-        let container = PaneContainerView(termView: tab.termView)
+        let container = PaneContainerView(termView: tab.engine.engineView)
         container.onFocusGained = onFocus
         DispatchQueue.main.async {
-            container.window?.makeFirstResponder(container.termView)
+            tab.engine.engineTakeFocus()
         }
         return container
     }

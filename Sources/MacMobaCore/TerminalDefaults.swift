@@ -66,3 +66,20 @@ public extension TerminalDefaults {
         defaults.object(forKey: metalRendererKey) as? Bool ?? true
     }
 }
+
+// Which library draws the terminals.
+//
+// Off by default while the libghostty path is still catching up: it has no
+// ⌘F, no themes, no select-all, and its screen dump is the viewport rather
+// than the whole scrollback. Each of those is named at its own call site.
+// It is measurably the faster engine — 0.149s against SwiftTerm's 0.346s for
+// 14MB of CJK into a local shell, which is engine and not renderer, since
+// SwiftTerm was on its quicker CoreGraphics path for that number — so this is
+// a migration in progress rather than an experiment kept at arm's length.
+public extension TerminalDefaults {
+    static let engineKey = "terminalEngine"
+
+    static func usesGhosttyEngine(from defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: engineKey) as? Bool ?? false
+    }
+}

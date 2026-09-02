@@ -35,6 +35,14 @@ import MacMobaCore
 import SwiftTerm
 
 /// What this app needs from a terminal, independent of who draws it.
+///
+/// Only operations with a real caller are here. An earlier draft also had a
+/// `send` for injecting typed bytes, on the assumption that broadcast and
+/// macros went through the view; they write straight to the connection, so it
+/// had no callers and was removed rather than implemented twice. Bracketed
+/// paste went the same way: only the clipboard menu asks, it asks the concrete
+/// view, and libghostty frames pastes itself so the question does not arise
+/// there.
 @MainActor
 protocol TerminalEngineView: AnyObject {
     /// The AppKit view, for the pane container to place and re-parent.
@@ -43,19 +51,12 @@ protocol TerminalEngineView: AnyObject {
     /// Bytes arriving from the far end.
     func engineFeed(_ bytes: ArraySlice<UInt8>)
 
-    /// Bytes going to the far end, entered by the user.
-    func engineSend(_ bytes: ArraySlice<UInt8>)
-
     /// The grid, which the transport must be told about so the remote wraps in
     /// the right place.
     var engineGrid: (cols: Int, rows: Int) { get }
 
     /// How many lines of history to keep.
     func engineSetScrollback(_ lines: Int)
-
-    /// Whether the program running inside asked for bracketed paste, which
-    /// decides whether a multi-line paste is framed or typed.
-    var engineBracketedPaste: Bool { get }
 
     func engineSetFontSize(_ size: Double)
 
@@ -73,6 +74,14 @@ protocol TerminalEngineView: AnyObject {
     /// True when this view holds the keyboard, which decides whether a pane
     /// counts as focused.
     var engineHasKeyboardFocus: Bool { get }
+
+    /// Give this terminal the keyboard.
+    ///
+    /// Cannot be `window.makeFirstResponder(engineView)` at the call site: the
+    /// libghostty engine hands out a hosting view, and making THAT the first
+    /// responder focuses the host rather than the surface inside it — the
+    /// terminal draws, and nothing typed arrives.
+    func engineTakeFocus()
 
     // What the terminal tells the app. Closures rather than a delegate
     // protocol, because a delegate would have to be spelled in one engine's
@@ -135,16 +144,12 @@ final class SwiftTermEngine: NSObject, TerminalEngineView {
 
     func engineFeed(_ bytes: ArraySlice<UInt8>) { view.feed(byteArray: bytes) }
 
-    func engineSend(_ bytes: ArraySlice<UInt8>) { view.send(data: bytes) }
-
     var engineGrid: (cols: Int, rows: Int) {
         let terminal = view.getTerminal()
         return (terminal.cols, terminal.rows)
     }
 
     func engineSetScrollback(_ lines: Int) { view.getTerminal().changeScrollback(lines) }
-
-    var engineBracketedPaste: Bool { view.getTerminal().bracketedPasteMode }
 
     func engineSetFontSize(_ size: Double) {
         view.font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
@@ -172,6 +177,8 @@ final class SwiftTermEngine: NSObject, TerminalEngineView {
     var engineHasKeyboardFocus: Bool {
         view.window?.isKeyWindow == true && view.window?.firstResponder === view
     }
+
+    func engineTakeFocus() { view.window?.makeFirstResponder(view) }
 }
 
 // MARK: - SwiftTerm's delegate, translated into the seam's callbacks
