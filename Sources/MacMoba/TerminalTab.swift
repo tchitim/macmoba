@@ -655,14 +655,23 @@ extension TerminalTab {
 /// Hosts the terminal view and reports focus: SwiftTerm's responder overrides
 /// aren't `open`, so focus is detected by observing the window's firstResponder.
 final class PaneContainerView: NSView {
-    /// Asked to take the keyboard once this container is actually in a window.
+    /// Asked to take the keyboard when this container FIRST reaches a window.
     ///
     /// A one-shot `DispatchQueue.main.async` right after construction is a
     /// guess about when SwiftUI will have placed the view, and it loses: the
-    /// SSH pane happened to win that race and the local shell did not, leaving
-    /// a shell that ran, drew, and ignored the keyboard. Asking on window
-    /// entry is the event itself rather than an approximation of it.
+    /// SSH pane won that race and the local shell did not, leaving a shell
+    /// that ran, drew, and ignored the keyboard. Window entry is the event
+    /// itself rather than an approximation of it.
+    ///
+    /// FIRST entry, though, not every one. SwiftUI re-parents this container
+    /// whenever the layout changes, and opening the SFTP browser is a layout
+    /// change — so firing every time meant the pane snatched the keyboard back
+    /// from the file browser the moment it appeared. The listing still drew,
+    /// which is why it looked like "SFTP works but you cannot do anything in
+    /// it": renaming, filtering and every keyboard action need the focus that
+    /// was being taken away.
     var onEnteredWindow: (() -> Void)?
+    private var hasTakenInitialFocus = false
 
     /// Whatever the engine draws into — SwiftTerm's view or libghostty's
     /// hosted surface. Typed as NSView so this container never has to know.
@@ -707,8 +716,13 @@ final class PaneContainerView: NSView {
         // Going on screen is exactly when a container must own its terminal,
         // and when it can hand it the keyboard.
         if window != nil {
+            // Adoption runs on every entry — a re-parented container must take
+            // its terminal back each time. Focus does not.
             adoptTerminal()
-            onEnteredWindow?()
+            if !hasTakenInitialFocus {
+                hasTakenInitialFocus = true
+                onEnteredWindow?()
+            }
         }
         guard let window else {
             observation = nil
