@@ -21,7 +21,7 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     init(app: AppState) {
         self.app = app
         termView = ClipboardLocalTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
-        termView.getTerminal().changeScrollback(TerminalDefaults.scrollback())
+        termView.engineSetScrollback(TerminalDefaults.scrollback())
         TerminalRendering.apply(to: termView)
         super.init()
         (termView as? ClipboardLocalTerminalView)?.owner = self
@@ -86,7 +86,7 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     }
 
     func applyFont(size: Double) {
-        termView.font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        termView.engineSetFontSize(size)
     }
 
     func markAttention() { needsAttention = true }

@@ -83,7 +83,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         self.termView = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
         // SwiftTerm keeps 500 lines unless told otherwise — a few seconds of a
         // build log.
-        termView.getTerminal().changeScrollback(TerminalDefaults.scrollback())
+        termView.engineSetScrollback(TerminalDefaults.scrollback())
         TerminalRendering.apply(to: termView)
         super.init()
         termView.terminalDelegate = self
@@ -182,21 +182,21 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         // A fresh attempt starts with a clean message area; connection progress
         // itself is the status bar's persistent left side, driven by `state`.
         clearStatus()
-        let term = termView.getTerminal()
+        let grid = termView.engineGrid
         Task {
             do {
                 let conn: any TerminalTransport
                 switch config.sessionKind {
-                case .telnet: conn = try await connectTelnet(cols: term.cols, rows: term.rows)
-                case .rlogin: conn = try await connectRlogin(cols: term.cols, rows: term.rows)
-                case .mosh:   conn = try await connectMosh(cols: term.cols, rows: term.rows)
+                case .telnet: conn = try await connectTelnet(cols: grid.cols, rows: grid.rows)
+                case .rlogin: conn = try await connectRlogin(cols: grid.cols, rows: grid.rows)
+                case .mosh:   conn = try await connectMosh(cols: grid.cols, rows: grid.rows)
                 case .serial: conn = try connectSerial()
-                default:      conn = try await connectSSH(cols: term.cols, rows: term.rows)
+                default:      conn = try await connectSSH(cols: grid.cols, rows: grid.rows)
                 }
                 self.connection = conn
                 self.state = .connected
                 // The view may have been laid out while we were connecting.
-                conn.resize(cols: term.cols, rows: term.rows)
+                conn.resize(cols: grid.cols, rows: grid.rows)
                 self.runOnConnectCommands()
                 // Expect/send runs off the receive thread as output arrives;
                 // arm it here so the first prompt is already being watched for.
@@ -349,7 +349,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
             }
         }
         DispatchQueue.main.async { [weak self] in
-            self?.termView.feed(byteArray: ArraySlice([UInt8](data)))
+            self?.termView.engineFeed(ArraySlice([UInt8](data)))
         }
     }
 
@@ -415,19 +415,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
     /// Plain text of the whole buffer (scrollback + visible screen).
     @MainActor
     func dumpScrollback() -> String {
-        let terminal = termView.getTerminal()
-        let (_, rows) = terminal.getDims()
-        let top = terminal.getTopVisibleRow()
-        var lines: [String] = []
-        for row in min(0, top)..<(top + rows) {
-            guard let line = terminal.getScrollInvariantLine(row: row) else { continue }
-            lines.append(line.translateToString(trimRight: true))
-        }
-        // Drop the blank tail of the screen.
-        while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
-            lines.removeLast()
-        }
-        return lines.joined(separator: "\n")
+        termView.engineDumpText()
     }
 
     private func stopLogging() {
@@ -474,8 +462,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
     @MainActor
     private func applyAttention(_ trigger: AttentionDetector.Trigger) {
         let activelyWatched = NSApp.isActive
-            && termView.window?.isKeyWindow == true
-            && termView.window?.firstResponder === termView
+            && termView.engineHasKeyboardFocus
         guard !activelyWatched else { return }
         needsAttention = true
         // Away from the app entirely → a system notification carries the pane
@@ -708,13 +695,13 @@ extension TerminalTab {
     /// implicit resize chain can be missed.
     @MainActor
     func syncRemoteSize() {
-        let terminal = termView.getTerminal()
-        connection?.resize(cols: terminal.cols, rows: terminal.rows)
+        let grid = termView.engineGrid
+        connection?.resize(cols: grid.cols, rows: grid.rows)
     }
 
     @MainActor
     func applyFont(size: Double) {
-        termView.font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        termView.engineSetFontSize(size)
     }
 }
 
