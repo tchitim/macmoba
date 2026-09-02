@@ -79,7 +79,7 @@ final class GhosttyTerminalTab: NSObject, ObservableObject, Identifiable {
     /// around its TerminalView looked fine and quietly did not work: the
     /// surface is built from `viewDidMoveToWindow` via `rebuildIfReady`, and
     /// driving that is the view layer's job, not this file's.
-    let surfaceState = TerminalViewState()
+    let surfaceState = GhosttyControllerConfig.makeState()
 
     private let bridge = PTYBridge()
     private let process: LocalProcess

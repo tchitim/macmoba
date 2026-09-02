@@ -33,7 +33,7 @@ final class GhosttySSHTab: NSObject, ObservableObject, Identifiable {
     let config: SessionConfig
 
     @Published var state: TerminalTab.State = .connecting
-    let surfaceState = TerminalViewState()
+    let surfaceState = GhosttyControllerConfig.makeState()
 
     private weak var app: AppState?
     private let session: InMemoryTerminalSession
