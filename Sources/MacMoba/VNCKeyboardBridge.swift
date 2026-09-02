@@ -226,6 +226,17 @@ final class VNCKeyboardBridge: ObservableObject {
         let held = flags.contains(.control) && flags.contains(.option)
             && !flags.contains(.command) && !flags.contains(.shift)
         if chordGesture.modifiersChanged(held: held), isGrabbed {
+            // Let the desktop see ⌃⌥ go up BEFORE the keyboard is handed back.
+            // RoyalVNC turns flag changes into key events by diffing against
+            // its own sticky `lastModifierFlags`, and releasing takes first
+            // responder away (see releaseGrab) — so the view never received
+            // the change that clears them, went on believing both were held,
+            // and never sent the key-ups. The remote was left holding Control,
+            // which on a Mac turns every later click into a ctrl-click: a
+            // right click. Delivering it here is idempotent, because by the
+            // time the event reaches the responder chain the flags already
+            // match and the diff is empty.
+            grabbedView?.flagsChanged(with: event)
             releaseGrab()
         }
         return event

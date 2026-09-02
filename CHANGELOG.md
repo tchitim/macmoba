@@ -4,6 +4,35 @@ Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.
 
+## 2.25
+
+**Fix: after releasing a captured remote desktop, every click became a right
+click.** Only on a Mac remote, because there ctrl-click *is* a right click —
+the remote was left holding Control down. RoyalVNC turns modifier changes into
+key events by diffing against its own remembered flags, and 2.24 started handing
+the keyboard back the moment ⌃⌥ was released, before that event reached the
+desktop. So the desktop never saw the modifiers clear, went on believing they
+were held, and never sent the key release. It is now told first, and the
+keyboard handed back after.
+
+修正:從已擷取的遠端桌面放開後,每一次點擊都變成右鍵。只有 Mac 遠端看得出來,
+因為在 macOS 上 ctrl-click 就是右鍵——遠端被留在「Control 還按著」的狀態。
+RoyalVNC 是拿事件的修飾鍵和自己記住的狀態做比對來產生按鍵事件,而 2.24 開始在
+⌃⌥ 一放開就交還鍵盤,比那個事件送到桌面還早;桌面因此從來沒看到修飾鍵歸零,
+一直以為還按著,也就從來沒送出放開。現在改成先通知桌面,再交還鍵盤。
+
+**East Asian text parses about three times faster.** CJK output went through a
+slower path than ASCII for every single character — an extra allocation, a
+grapheme-cluster construction, and a block of combining-character work that
+plain text skips entirely. Characters that cannot combine with anything now take
+a direct route: 11.8 to 31.9 MB/s, with ASCII unchanged. Most visible in a local
+shell, where nothing on the network is holding the output back.
+
+東亞文字的解析大約快了三倍。中日韓輸出過去在**每一個字元**上都比 ASCII 多走一段路——
+多一次配置、多建一個 grapheme cluster,還有一整段純文字根本不會碰到的組合字處理。
+現在不可能與鄰居組合的字元直接走捷徑:11.8 提升到 31.9 MB/s,ASCII 維持不變。
+在本機 shell 最明顯,因為那裡沒有網路速度擋著。
+
 ## 2.24
 
 **Fix: after leaving a captured remote desktop, the shell beside it would not type.**
