@@ -86,7 +86,7 @@ final class SessionTab: ObservableObject, Identifiable {
             switch self {
             case .terminal(let pane): return pane.title
             case .localShell(let pane): return pane.title
-            case .ghostty(let pane): return pane.title
+            case .ghostty(let pane): return pane.displayTitle
             case .vnc(let pane): return pane.title
             case .rdp(let pane): return pane.title
             case .web(let pane): return pane.title
@@ -510,7 +510,11 @@ final class SessionTab: ObservableObject, Identifiable {
         switch focusedContent {
         case .terminal(let pane): return pane.termView
         case .localShell(let pane): return pane.termView
-        case .ghostty(let pane): return pane.termView
+        // No AppKit view to hand over: the libghostty surface is owned by the
+        // package's SwiftUI view, so this experimental pane has no Overview
+        // thumbnail. Nil rather than a stand-in, which would show the wrong
+        // pane's picture.
+        case .ghostty: return nil
         case .vnc(let pane): return pane.container
         case .rdp(let pane): return pane.container
         case .web(let pane): return pane.webView

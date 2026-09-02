@@ -25,70 +25,122 @@ import MacMobaCore
 import SwiftTerm
 import SwiftUI
 
+/// The PTY side, deliberately off the main actor.
+///
+/// libghostty runs terminal IO on its own thread and calls the session's write
+/// and resize hooks from there; LocalProcess delivers PTY output on a dispatch
+/// queue. An earlier version of this file answered both with
+/// `MainActor.assumeIsolated`, which is an assertion rather than a hop — so the
+/// first time a surface actually got built, the resize callback arrived on
+/// `Termio.threadEnter` and aborted the process. Everything those callbacks
+/// touch therefore lives here, where nothing pretends to be main-actor.
+private final class PTYBridge: NSObject, LocalProcessDelegate, @unchecked Sendable {
+    /// Set once, immediately after construction and before any shell starts.
+    var session: InMemoryTerminalSession?
+    var onExit: ((Int32?) -> Void)?
+
+    /// The grid libghostty last measured. Written from its IO thread, read
+    /// from LocalProcess's queue when it starts the child, hence the lock.
+    private let sizeLock = NSLock()
+    private var viewport = winsize(ws_row: 24, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0)
+
+    func setViewport(_ size: winsize) {
+        sizeLock.lock()
+        viewport = size
+        sizeLock.unlock()
+    }
+
+    func getWindowSize() -> winsize {
+        sizeLock.lock()
+        defer { sizeLock.unlock() }
+        return viewport
+    }
+
+    /// Handed to the session as-is. InMemoryTerminalSession is Sendable and
+    /// does its own thread handling, and bouncing every chunk of PTY output
+    /// through the main queue would serialise the very path this pane exists
+    /// to measure.
+    func dataReceived(slice: ArraySlice<UInt8>) {
+        session?.receive(Data(slice))
+    }
+
+    func processTerminated(_ source: LocalProcess, exitCode: Int32?) {
+        onExit?(exitCode)
+    }
+}
+
 @MainActor
 final class GhosttyTerminalTab: NSObject, ObservableObject, Identifiable {
     let id = UUID()
 
-    @Published var title = "libghostty"
     @Published var state: TerminalTab.State = .connecting
 
-    /// GhosttyTerminal and SwiftTerm both export a `TerminalView`, so this one
-    /// has to say which it means every time it is named.
-    let termView: GhosttyTerminal.TerminalView
+    /// The package's own view state. Hand-rolling an NSViewRepresentable
+    /// around its TerminalView looked fine and quietly did not work: the
+    /// surface is built from `viewDidMoveToWindow` via `rebuildIfReady`, and
+    /// driving that is the view layer's job, not this file's.
+    let surfaceState = TerminalViewState()
 
-    private var process: LocalProcess?
-    private var session: InMemoryTerminalSession?
-    /// Last size libghostty reported, answered back when the PTY asks. The
-    /// terminal is the authority on the grid here: it owns the font metrics,
-    /// so it is the only thing that knows how many columns actually fit.
-    private var viewport = winsize(ws_row: 24, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0)
-
-    private let controller = TerminalController { builder in
-        builder.withBackgroundOpacity(1)
-    }
+    private let bridge = PTYBridge()
+    private let process: LocalProcess
+    private let session: InMemoryTerminalSession
+    private var started = false
 
     override init() {
-        termView = GhosttyTerminal.TerminalView(
-            frame: NSRect(x: 0, y: 0, width: 800, height: 480))
-        super.init()
+        let bridge = self.bridge
+        let process = LocalProcess(delegate: bridge)
+        self.process = process
 
-        let session = InMemoryTerminalSession(
+        session = InMemoryTerminalSession(
             // Bytes the terminal produces — keystrokes, paste, replies to
-            // device queries — go to the shell.
-            write: { [weak self] data in
-                MainActor.assumeIsolated {
-                    guard let self, let process = self.process else { return }
-                    process.send(data: ArraySlice(data))
-                }
+            // device queries — go straight to the shell. LocalProcess.send
+            // hands off to DispatchIO, so it needs no hop of its own.
+            write: { data in
+                process.send(data: ArraySlice(data))
             },
-            // libghostty measured a new grid. Remember it, and tell the PTY,
-            // or the shell keeps line-wrapping to the old width.
-            resize: { [weak self] port in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.viewport = winsize(
-                        ws_row: port.rows,
-                        ws_col: port.columns,
-                        ws_xpixel: UInt16(truncatingIfNeeded: port.widthPixels),
-                        ws_ypixel: UInt16(truncatingIfNeeded: port.heightPixels))
-                    self.applyWindowSize()
+            // libghostty measured a new grid. Tell the PTY, or the shell keeps
+            // wrapping at the width it started with.
+            resize: { port in
+                var size = winsize(
+                    ws_row: port.rows,
+                    ws_col: port.columns,
+                    ws_xpixel: UInt16(truncatingIfNeeded: port.widthPixels),
+                    ws_ypixel: UInt16(truncatingIfNeeded: port.heightPixels))
+                bridge.setViewport(size)
+                // LocalProcess only reads the window size when it starts the
+                // child, so a later resize has to reach the PTY directly.
+                // ioctl is safe from any thread; childfd is public for this.
+                if process.childfd >= 0 {
+                    _ = ioctl(process.childfd, TIOCSWINSZ, &size)
                 }
             },
             // This host repaints on every dispatch and reads only rows and
-            // columns, which is exactly the case the flag is meant for: a
-            // divider drag is mostly sub-cell movement, and each one would
-            // otherwise ask the shell to re-wrap for no change.
+            // columns, which is the case the flag is for: a divider drag is
+            // mostly sub-cell movement, and each one would otherwise ask the
+            // shell to re-wrap for no change.
             suppressesPixelOnlyResizes: true
         )
-        self.session = session
 
-        termView.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
-        termView.controller = controller
-        termView.delegate = self
+        super.init()
+
+        bridge.session = session
+        bridge.onExit = { [weak self] code in
+            Task { @MainActor in
+                self?.state = .closed(code.map { "shell exited (\($0))" } ?? "shell exited")
+            }
+        }
+        surfaceState.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
+        surfaceState.onClose = { [weak self] _ in
+            Task { @MainActor in self?.disconnect() }
+        }
     }
 
+    /// Started from the view's `onAppear`, not from here: the surface is built
+    /// when the view reaches a window, and a shell started before that has
+    /// nowhere to put its first output.
     func start(directory: String? = nil) {
-        guard process == nil else { return }
+        guard !started else { return }
+        started = true
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let name = (shell as NSString).lastPathComponent
         // xterm-256color, not xterm-ghostty: the package ships a terminfo for
@@ -98,8 +150,6 @@ final class GhosttyTerminalTab: NSObject, ObservableObject, Identifiable {
         var env = Terminal.getEnvironmentVariables(termName: "xterm-256color")
         env.append("LANG=en_US.UTF-8")
 
-        let process = LocalProcess(delegate: self)
-        self.process = process
         state = .connected
         process.startProcess(
             executable: shell,
@@ -107,119 +157,31 @@ final class GhosttyTerminalTab: NSObject, ObservableObject, Identifiable {
             environment: env,
             execName: "-\(name)",
             currentDirectory: directory ?? FileManager.default.homeDirectoryForCurrentUser.path)
-        applyWindowSize()
     }
 
     func disconnect() {
-        process?.terminate()
-        process = nil
+        process.terminate()
         state = .closed("shell exited")
     }
 
-    /// LocalProcess only reads the window size when it starts the child, so a
-    /// later resize has to reach the PTY directly. `childfd` is public for
-    /// exactly this.
-    private func applyWindowSize() {
-        guard let process, process.childfd >= 0 else { return }
-        var size = viewport
-        _ = ioctl(process.childfd, TIOCSWINSZ, &size)
+    /// Title tracking rides on TerminalViewState, which republishes it, so
+    /// this reads through rather than keeping a second copy that can drift.
+    /// Marked, because telling this pane apart from the SwiftTerm one beside
+    /// it is the whole point.
+    var displayTitle: String {
+        surfaceState.title.isEmpty ? "libghostty" : "👻 \(surfaceState.title)"
     }
 }
 
-// MARK: - the shell
+/// The pane, drawn by the package's own SwiftUI surface view.
+struct GhosttyTerminalPaneView: View {
+    @ObservedObject var tab: GhosttyTerminalTab
 
-extension GhosttyTerminalTab: LocalProcessDelegate {
-    nonisolated func processTerminated(_ source: LocalProcess, exitCode: Int32?) {
-        MainActor.assumeIsolated {
-            state = .closed(exitCode.map { "shell exited (\($0))" } ?? "shell exited")
-            title = "libghostty — exited"
-        }
-    }
-
-    nonisolated func dataReceived(slice: ArraySlice<UInt8>) {
-        let data = Data(slice)
-        MainActor.assumeIsolated {
-            session?.receive(data)
-        }
-    }
-
-    nonisolated func getWindowSize() -> winsize {
-        MainActor.assumeIsolated { viewport }
-    }
-}
-
-// MARK: - the surface
-
-extension GhosttyTerminalTab: TerminalSurfaceTitleDelegate,
-                              TerminalSurfaceResizeDelegate,
-                              TerminalSurfaceCloseDelegate {
-    nonisolated func terminalDidChangeTitle(_ title: String) {
-        MainActor.assumeIsolated {
-            // Kept marked, because the whole point of the pane is telling it
-            // apart from the SwiftTerm one sitting next to it.
-            self.title = title.isEmpty ? "libghostty" : "👻 \(title)"
-        }
-    }
-
-    nonisolated func terminalDidResize(columns: Int, rows: Int) {}
-
-    nonisolated func terminalDidClose(processAlive: Bool) {
-        MainActor.assumeIsolated { disconnect() }
-    }
-}
-
-/// Hosts the libghostty surface in SwiftUI.
-///
-/// Uses its own container rather than `PaneContainerView`, which is typed to
-/// SwiftTerm's `TerminalView`. The re-parenting problem is the same one though
-/// — a bare AppKit view lives wherever the last host put it — so `adopt()` is
-/// idempotent and runs on every update, exactly as the SwiftTerm panes do.
-struct GhosttyTerminalHostView: NSViewRepresentable {
-    let tab: GhosttyTerminalTab
-    var onFocus: () -> Void = {}
-
-    final class Container: NSView {
-        let termView: GhosttyTerminal.TerminalView
-        var onFocusGained: (() -> Void)?
-
-        init(termView: GhosttyTerminal.TerminalView) {
-            self.termView = termView
-            super.init(frame: .zero)
-            adopt()
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) { fatalError("not used") }
-
-        func adopt() {
-            guard termView.superview !== self else { return }
-            termView.removeFromSuperview()
-            termView.frame = bounds
-            termView.autoresizingMask = [.width, .height]
-            addSubview(termView)
-        }
-
-        override func layout() {
-            super.layout()
-            termView.frame = bounds
-            // libghostty measures the grid from the view's own size, so it has
-            // to be told the layout changed; without this the shell keeps the
-            // columns it started with and wraps in the wrong place.
-            termView.fitToSize()
-        }
-    }
-
-    func makeNSView(context: Context) -> Container {
-        let container = Container(termView: tab.termView)
-        container.onFocusGained = onFocus
-        DispatchQueue.main.async {
-            container.window?.makeFirstResponder(container.termView)
-            onFocus()
-        }
-        return container
-    }
-
-    func updateNSView(_ nsView: Container, context: Context) {
-        nsView.adopt()
+    var body: some View {
+        TerminalSurfaceView(context: tab.surfaceState)
+            .onAppear {
+                tab.start()
+                tab.surfaceState.requestFocus()
+            }
     }
 }
