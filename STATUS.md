@@ -889,7 +889,7 @@ protocol 之上的，之後要補 explicit 只要多一個 conformance，不用�
 | session 匯出匯入 | ✅ 已做（`SessionArchive`/`SessionExport`：預設剝除密碼，帶密碼一律加密；`SessionImport.merge` 額外去重） |
 | 分頁拖曳排序 | ✅ 已做（分頁列 `onDrag`/`onDrop` → `TabReorderDropDelegate` → `WindowState.moveTab`／`ListReorder`） |
 | ⑥ 團隊同步（無後端版） | ✅ 用「加密封存檔 + 智慧合併」達成，**本輪補 update-merge**：匯入時 `.additive`（只加、不動既有，安全預設）或 `.update`（依 id 更新既有=拉隊友的改動；剝密碼的封存檔不會把本機已存密碼清空）。匯入對話框在偵測到既有項有改動時給「Add & Update／Add New Only」。3 個新測試（additive vs update、保留本機密碼、同時 add/update/skip）。**真正 live cloud 後端**（CloudKit／伺服器即時同步）未做：要基礎設施、驗證性低 |
-| zmodem（rz/sz over terminal） | ✅ **接收方向已做**（v1.42，見上表；跟真 `sz` 對測）。發送方向（Mac→remote `rz`）未做 |
+| zmodem（rz/sz over terminal） | ✅ **兩個方向都已做**：接收 v1.42（跟真 `sz` 對測）、發送 v1.43（`ZModemSender`，跟真 `rz -y` 對測），見上表。使用者 v1.96 實機驗收雙向通過 |
 
 ---
 
