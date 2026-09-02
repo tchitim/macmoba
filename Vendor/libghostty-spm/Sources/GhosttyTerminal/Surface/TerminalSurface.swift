@@ -238,6 +238,33 @@ public final class TerminalSurface {
         readSelectionResult()?.text
     }
 
+    /// LOCAL ADDITION — see Vendor/libghostty-spm/README.md.
+    ///
+    /// Everything the terminal holds, scrollback included, as plain text.
+    ///
+    /// The package otherwise offers only `readViewportText`, which is what is
+    /// on screen. A host that searches its own scrollback or dumps a session
+    /// needs the history too, and libghostty already exposes it — this builds
+    /// a selection spanning the whole screen and reads that, using the same
+    /// `ghostty_text_s` handling as `readSelection` above.
+    public func readAllText() -> String? {
+        guard let s = surface else { return nil }
+        var selection = ghostty_selection_s()
+        selection.top_left = ghostty_point_s(
+            tag: GHOSTTY_POINT_SCREEN, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0)
+        selection.bottom_right = ghostty_point_s(
+            tag: GHOSTTY_POINT_SCREEN, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0)
+        selection.rectangle = false
+
+        var out = ghostty_text_s()
+        guard ghostty_surface_read_text(s, selection, &out) else { return nil }
+        defer { ghostty_surface_free_text(s, &out) }
+        guard let textPtr = out.text, out.text_len > 0 else { return "" }
+        let bytes = UnsafeBufferPointer(start: textPtr, count: Int(out.text_len))
+            .map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
     func readSelectionResult() -> SelectionResult? {
         guard let s = surface else {
             TerminalDebugLog.log(.input, "surface readSelection ignored: missing surface")

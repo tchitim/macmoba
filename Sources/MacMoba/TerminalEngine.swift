@@ -84,9 +84,15 @@ protocol TerminalEngineView: AnyObject {
     /// Bring a row into view — where a search result lands.
     func engineScroll(toRow row: Int)
 
-    /// Scrollback plus screen as plain text, for `read-screen` and for the
-    /// session log's "what was on screen before logging started" header.
-    func engineDumpText() -> String
+    /// Scrollback plus screen, one entry per line, each with the row number
+    /// `engineScroll(toRow:)` accepts.
+    ///
+    /// Rows rather than plain text because search has to scroll to what it
+    /// finds, and the two engines number rows differently: SwiftTerm counts
+    /// scroll-invariant rows that can start negative, libghostty counts from
+    /// zero at the top of the scrollback. Returning the number alongside the
+    /// text is what lets one search work against both.
+    func engineTextLines() -> [(row: Int, text: String)]
 
     /// True when this view holds the keyboard, which decides whether a pane
     /// counts as focused.
@@ -116,6 +122,17 @@ protocol TerminalEngineView: AnyObject {
     var engineOnOpenLink: ((String) -> Void)? { get set }
     /// The remote asked to put something on the clipboard (OSC 52).
     var engineOnClipboardCopy: ((Data) -> Void)? { get set }
+}
+
+extension TerminalEngineView {
+    /// The same content as one string, for `read-screen` and for the session
+    /// log's "what was on screen before logging started" header. Derived so
+    /// there is one traversal to be right rather than two to keep in step.
+    func engineDumpText() -> String {
+        var lines = engineTextLines().map(\.text)
+        while let last = lines.last, last.isEmpty { lines.removeLast() }
+        return lines.joined(separator: "\n")
+    }
 }
 
 // MARK: - SwiftTerm
@@ -182,17 +199,18 @@ final class SwiftTermEngine: NSObject, TerminalEngineView {
 
     func engineScroll(toRow row: Int) { view.scrollTo(row: row) }
 
-    func engineDumpText() -> String {
+    func engineTextLines() -> [(row: Int, text: String)] {
         let terminal = view.getTerminal()
         let (_, rows) = terminal.getDims()
+        // Scroll-invariant rows count from the very top of the scrollback, so
+        // start at the earliest one rather than at the viewport.
         let top = terminal.getTopVisibleRow()
-        var lines: [String] = []
+        var out: [(row: Int, text: String)] = []
         for row in min(0, top)..<(top + rows) {
             guard let line = terminal.getScrollInvariantLine(row: row) else { continue }
-            lines.append(line.translateToString(trimRight: true))
+            out.append((row, line.translateToString(trimRight: true)))
         }
-        while let last = lines.last, last.isEmpty { lines.removeLast() }
-        return lines.joined(separator: "\n")
+        return out
     }
 
     var engineHasKeyboardFocus: Bool {

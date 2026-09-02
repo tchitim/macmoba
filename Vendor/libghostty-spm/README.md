@@ -49,6 +49,19 @@ GhosttyTerminalTab.init()
 `Bundle.main.bundleURL`、以及 `Bundle(for:)` 的兩個對應位置；
 全部落空就回傳 `nil`，而不是把行程炸掉。
 
+## 第二個改動:`readAllText()`
+
+上游只給 `readViewportText()`——「螢幕上看得到的」。但要搜尋自己的 scrollback、
+或把整個 session 傾印出來,需要的是**含歷史的全部文字**,而 libghostty 本身給得出來:
+`ghostty_surface_read_text` 可以讀任意範圍。
+
+所以 `TerminalSurface` 加了 `readAllText()`:組一個涵蓋整個 screen 的
+`ghostty_selection_s`(`GHOSTTY_POINT_SCREEN` + `TOP_LEFT`/`BOTTOM_RIGHT`)去讀,
+`ghostty_text_s` 的處理方式跟旁邊的 `readSelection` 完全一樣。
+`TerminalViewState` 上也開了同名的轉發。
+
+這一項讓 MacMoba 的 ⌘F 和 `read-screen` 在兩個引擎上看到同樣多的內容。
+
 ## 怎麼驗
 
 ```bash

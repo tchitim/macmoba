@@ -148,13 +148,20 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         _ = surfaceState.scrollToRow(UInt(max(0, row)))
     }
 
-    /// Viewport only, not the whole scrollback.
+    /// Scrollback included, matching SwiftTerm's version.
     ///
-    /// `readViewportText` is what the package exposes. SwiftTerm's version of
-    /// this walks the scroll-invariant rows and returns history too, so
-    /// `read-screen` and the session log's pre-logging header see less here.
-    /// Named rather than quietly different.
-    func engineDumpText() -> String { session.readViewportText() ?? "" }
+    /// This was the viewport only while `readViewportText` was all the package
+    /// offered. libghostty can read any range, so `readAllText` was added to
+    /// the vendored copy and this is no longer the lesser of the two.
+    ///
+    /// Rows are numbered from zero at the top of the scrollback, which is what
+    /// `scrollToRow` takes, so the index is the row.
+    func engineTextLines() -> [(row: Int, text: String)] {
+        let text = surfaceState.readAllText() ?? session.readViewportText() ?? ""
+        return text.split(separator: "\n", omittingEmptySubsequences: false)
+            .enumerated()
+            .map { ($0.offset, String($0.element)) }
+    }
 
     var engineHasKeyboardFocus: Bool { surfaceState.isFocused }
 

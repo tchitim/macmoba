@@ -172,6 +172,10 @@ public final class TerminalViewState: ObservableObject {
 
     /// Reveal an absolute scrollback row, where zero is the first row.
     @discardableResult
+    /// LOCAL ADDITION — see Vendor/libghostty-spm/README.md.
+    /// Everything the terminal holds, scrollback included.
+    public func readAllText() -> String? { surface?.readAllText() }
+
     public func scrollToRow(_ row: UInt) -> Bool {
         surface?.scrollToRow(row) ?? false
     }
