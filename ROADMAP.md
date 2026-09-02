@@ -139,6 +139,37 @@ channel 都已經編進 FreeRDP 了，只差接線與 UI：
 
 ---
 
+## 效能（不是 MobaXterm 對照,是自己量出來的）
+
+數字來自 `TerminalThroughputBenchmark`(release build,`MACMOBA_BENCH=1`)。
+
+| 項目 | 現況 |
+|---|---|
+| feed ASCII | 51 MB/s ＝ 53.6M 字元/秒 |
+| feed 帶色 ANSI | 27 MB/s |
+| feed CJK | **31.9 MB/s**(原本 11.8,見下) |
+| draw 1200×800 | 3.5 ms/frame |
+| draw 2560×1440 | 8.1 ms/frame |
+| copy 全選 10,000 行 | 17 ms |
+
+~~CJK 解析比 ASCII 慢一個數量級~~ ✅ **做好了**:每字元 5.3M → 14.2M(2.7 倍),
+與 ASCII 的差距從 10.1 倍收到 3.8 倍。做法與驗證見 `Vendor/SwiftTerm/README.md`
+與 STATUS.md;SwiftTerm 因此從版本相依改成 `Vendor/` 裡的分支。
+
+還沒做的:
+
+1. **Metal 算繪完全沒被量到** — `testDrawTime` 用 `cacheDisplay(in:to:)`
+   畫進 bitmap rep,那條路**強制走 CoreGraphics**;Metal 要有真的 layer／window
+   才會啟用。所以上表的 draw 數字全是 CG fallback,而 README 寫的「選用 GPU 算繪、
+   拖曳選取明顯更順」**目前沒有數字支撐**。要量得寫成 UI 測試或 app 內的隱藏量測。
+2. **draw 隨 pane 數線性成長,而分割正是本 App 的賣點** — 1440p 一格就吃掉
+   60fps 預算(16.7 ms)的一半,四格必然超支。上表是單一 view,是樂觀下限。
+3. **混合內容仍走慢路徑** — `handlePrint` 的 ASCII 批次寫入是**整段全有全無**:
+   一個 CJK byte 就讓**整個 chunk**(連同裡面的 ASCII)退回逐字元處理。
+   把 ASCII 連續段切出來各自批次寫,對中英混排的 log 會有效。
+
+---
+
 ## 下一步建議
 
 沒有特別偏好的話，我會照這個順序做：

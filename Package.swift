@@ -19,7 +19,11 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-ssh.git", from: "0.9.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
         .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", from: "1.8.0"),
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.0"),
+        // Vendored, not a version dependency: the CJK parsing fast path has to
+        // live inside Terminal.handlePrint, and that loop exposes no hook to
+        // patch from outside. Branched from 1.15.0; Vendor/SwiftTerm/README.md
+        // records what was changed and how to re-verify and re-sync it.
+        .package(path: "Vendor/SwiftTerm"),
         // Pinned by revision, not version: RoyalVNC's vendored C targets carry
         // -Wno-* warning suppressions, which SwiftPM classes as "unsafe flags"
         // and refuses in a versioned dependency. The flags are harmless and a

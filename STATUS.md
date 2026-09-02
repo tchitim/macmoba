@@ -1,6 +1,7 @@
 # MacMoba 專案狀態
 
-最後更新：2026-09-01 · 版本 **v2.24** · 測試 **789 項全過**
+最後更新：2026-09-02 · 版本 **v2.24** · 測試 **789 項**（3 項 keychain 測試在無互動的終端機下會失敗,見文末）
+（**CJK 解析加速 2.7 倍,而且 SwiftTerm 從版本相依改成 `Vendor/SwiftTerm` 的分支**。起點是一個量測而不是感覺:`TerminalThroughputBenchmark` 在 release build 下顯示 CJK 是 **11.8 MB/s**、純 ASCII 是 51.2 MB/s——換算成**每字元**是 5.3M 對 53.6M,**慢 10.1 倍**(用 MB/s 看只有 4.3 倍,那是假的,一個中文字三個 byte)。病灶在 `Terminal.handlePrint`:ASCII 那條路走到 `insertCharacter` 就 `continue`,多位元組那條卻在**每個字元**上多做一次 heap 配置、一次 `Character` 建構、一次 unicodeScalars 走訪,然後掉進 ASCII 直接跳過的整段 grapheme 組合判斷——包含把**前一格重建成 `Character`** 去檢查 ZWJ;`columnWidth` 再加一次 `properties.generalCategory` 查表。修法是兩處:`columnWidth` 對東亞區段直接回傳 2;`handlePrint` 對「獨立寬字元」從預看位元組組出 scalar 後直接寫入。唯一仍須走一般路徑的是**前一格以 ZWJ 結尾**,改用 `isSimpleRune` 判斷即可——裸 ZWJ 寬度為 0,永遠不會自己佔一格,所以只有存著整個 cluster 的格子才可能以它結尾。結果 **11.8 → 31.9 MB/s**,ASCII 與帶色輸出不變。**區段不是用眼睛決定的**:`CJKFastPathVerification` 走過全部 **39,615 個 scalar**,逐一驗證寬度是 2、沒有 combining class／不是 emoji modifier／variation selector／ZWJ／RI、且不會與前一字合併成同一個 cluster。**第一次跑就抓到兩個真錯誤**——U+302A–302F 是有 combining class 的漢字聲調符號,U+303F/3040/3097/3098 寬度是 1 不是 2——都已從區段挖掉。上游 451+57 項測試全過。**為什麼要 vendor**:要改的地方在 `handlePrint` 的迴圈裡,那條路徑沒有任何對外鉤子,不動原始碼就沒有第二種做法;順帶把 `swift-argument-parser` 與 `swift-docc-plugin` 移出相依圖。細節與重新同步的方法見 `Vendor/SwiftTerm/README.md`。)
 （**VNC 和 SSH 並排時,從 VNC 離開後 SSH 打不了字——兩個原因,而且都是異質分割才踩得到的**。使用者的回報裡有一句話直接鎖定範圍:「解散群組就能打字」。轉送鍵盤到遠端的條件是 `NSApp.keyWindow?.firstResponder as? VNCCAFramebufferView`,而 (1) `grab` 時明確做了 `window.makeFirstResponder(view)`,`releaseGrab` **從來沒有交還**——按 ⌃⌥ 之後,遠端桌面仍然是 first responder,所以每一個按鍵都還是符合轉送條件,全部送去 Mac mini 了。這在「一個桌面佔滿一個分頁」的年代看不出來,因為離開它就等於切分頁,view 會離開視窗;現在旁邊就坐著一個 shell,鍵盤只是單純還指著桌面。(2) 就算想用點擊搶回來也不行:**AppKit 不會因為點擊就移動 first responder**,而 SwiftTerm 的 `mouseDown` 也沒有要求——pane 只有在 host view 第一次建立時 (`TerminalHostView.makeNSView`) 拿到過鍵盤。同一種分頁裡看不出來,因為沒有別人會搶。兩個都修:`releaseGrab` 交還 first responder,`ClipboardTerminalView`／`ClipboardLocalTerminalView` 的 `mouseDown` 主動取得。順帶好處是 `PaneContainerView` 本來就在觀察 `window.firstResponder`,所以**焦點框現在會跟著點擊走**,本機 pane 也補上了同一條線(SwiftUI 的 `.onTapGesture` 在這裡沒用——終端機 view 會先把點擊吃掉)。）
 （**本機 shell 結束後 Esc 關不掉分頁——因為那個約定只做在 SSH 那條路徑上**。「Return 重連、Esc 關閉」的判斷 `DeadTerminalKey` 在 Core 裡而且有測試,但**呼叫它的只有 `TerminalTab.send`**。本機 shell 用的是 SwiftTerm 自己的 `LocalProcessTerminalView`,按鍵直接寫進它自己的程序——程序結束之後,按鍵就落在一個已經不存在的 PTY 上,什麼都不會發生。修法是讓 `ClipboardLocalTerminalView` 覆寫 `send`,在 shell 已結束時交給**同一個** `DeadTerminalKey`,而不是另外寫一份(一個約定寫兩次,就是兩份會各自漂移的實作)。Return 在同一格開新 shell,`[shell exited]` 以上的 scrollback 保留;Esc 關掉這一格,是最後一格就關掉分頁。同時補上結束後的提示視窗——SSH pane 從來都有,本機 shell 沒有,所以那兩個能用的按鍵是**沒有人看得見的按鍵**,從外面看就是「Esc 沒作用」。順手刪掉 `closePaneHoldingDeadTerminal` 裡一段拿 `LocalTerminalTab` 跟 `TerminalTab` 做 `===` 比較的死碼——不同型別,永遠是 false,是本機分頁還在放佔位符 pane 那個年代的遺留。）
 （**解散分割後本機終端機空白——2.21 那次改動的直接後果,而且是已知的那一類**。`LocalTerminalHostView` 的 `makeNSView` 直接回傳 `tab.termView` 本身。在本機 shell 永遠是一整個分頁、從來不會被搬動的年代,這樣寫是安全的;一旦它變成 pane,拆分割時會為同一個 view 建立新的 host,而**一個裸的 AppKit view 只會待在最後一個掛載它的地方**——如果 SwiftUI 留在畫面上的是更早那一個,這一格就是「邊框正確、標題正確、中間全空」。這跟 VNC 黑屏(2.09–2.13)和 SSH pane 空白是**同一個 bug class**,而且解法早就寫好了:`PaneContainerView` 的 `adoptTerminal()`,每次 update 和 `viewDidMoveToWindow` 都重新認領一次,冪等且便宜。`LocalProcessTerminalView` 本來就是 `TerminalView` 的子類別,所以直接沿用,沒有新機制。**教訓:把一個東西從「永遠不動」改成「會被搬動」時,要去找專案裡已經為「會被搬動」寫好的那個容器,而不是等它壞掉。**）
@@ -922,6 +923,19 @@ protocol 之上的，之後要補 explicit 只要多一個 conformance，不用�
 - **keyboard-interactive（2FA/OTP）做不到**（上游還沒做，不是永久性的）：
   NIOSSH 0.15.0 的 `Offer` 沒有這個方法，message id 60 又被寫死當成 PK_OK 解析。
   上游 PR #242 合併後升版就有了。
+
+---
+
+## 關於那 3 項 keychain 測試
+
+`BiometricUnlockTests` 有 3 項會在**沒有互動能力的終端機**裡失敗,回報
+`keychain error -25308`（`errSecInteractionNotAllowed`）。那不是程式的問題:
+同一個 shell 裡 `security show-keychain-info` 也會回
+"User interaction is not allowed"——login keychain 拒絕讓非互動行程加東西。
+在你自己的終端機或 Xcode 裡跑就會過,所以上面仍記為 789 項的基準。
+判斷它與 SwiftTerm 分支無關不需要實驗:`BiometricUnlock` 住在 `MacMobaCore`,
+而 `MacMobaCore` 的相依只有 NIO／NIOSSH／Crypto／CryptoSwift,**根本看不到
+SwiftTerm**。
 
 ---
 

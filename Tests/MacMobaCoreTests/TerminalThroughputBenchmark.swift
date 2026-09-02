@@ -1,4 +1,5 @@
 import XCTest
+import MacMobaCore
 #if canImport(AppKit)
 import AppKit
 import SwiftTerm
@@ -9,6 +10,22 @@ import SwiftTerm
 ///
 /// Skipped unless MACMOBA_BENCH=1: it is a measurement, not an assertion about
 /// correctness, and it costs seconds.
+///
+/// RUN IT IN RELEASE. `swift test -c release`, or the numbers are about ten
+/// times too low and say more about the debug build than about the terminal.
+///
+/// Reference, M-series, 2026-09-02, after the CJK fast path in
+/// Vendor/SwiftTerm (the CJK figure was 11.8 MB/s before it):
+///
+///     feed  plain      51 MB/s   = 53.6M chars/s
+///     feed  coloured   27 MB/s
+///     feed  CJK        32 MB/s   = 14.2M chars/s
+///     draw  1200x800   3.5 ms/frame
+///     draw  2560x1440  8.1 ms/frame
+///     copy  10k lines  17 ms
+///
+/// Compare feed figures per CHARACTER, not per megabyte: a CJK character is
+/// three bytes, so MB/s flatters it by roughly three times.
 final class TerminalThroughputBenchmark: XCTestCase {
 
     private var enabled: Bool { ProcessInfo.processInfo.environment["MACMOBA_BENCH"] == "1" }
@@ -32,6 +49,12 @@ final class TerminalThroughputBenchmark: XCTestCase {
 
     /// Drawing a screenful, which is the cost libghostty's GPU renderer would
     /// actually be replacing.
+    ///
+    /// ⚠️ This measures CoreGraphics, NOT the Metal renderer the app offers as
+    /// an option. `cacheDisplay(in:to:)` draws into a bitmap rep, which forces
+    /// the CG path; Metal needs a real layer and window to engage. So the app's
+    /// GPU renderer is currently unmeasured, and any claim about how much it
+    /// helps is unsupported until that gap is closed.
     func testDrawTime() throws {
         try XCTSkipUnless(enabled, "set MACMOBA_BENCH=1 to measure")
         for size in [CGSize(width: 1200, height: 800), CGSize(width: 2560, height: 1440)] {
@@ -58,6 +81,10 @@ final class TerminalThroughputBenchmark: XCTestCase {
         for lines in [1_000, 10_000, 50_000] {
             let view = TerminalView(frame: CGRect(x: 0, y: 0, width: 1200, height: 800))
             view.getTerminal().resize(cols: 120, rows: 40)
+            // The app keeps 10,000 lines. Without this the terminal holds
+            // SwiftTerm's default 500, so every size below selected the same
+            // 540 rows and the measurement said nothing about a big buffer.
+            view.getTerminal().changeScrollback(TerminalDefaults.defaultScrollback)
             view.feed(byteArray: [UInt8](Self.plain(lines: lines))[...])
             view.selectAll()
             let started = Date()
