@@ -4,6 +4,24 @@ Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.
 
+## 2.26
+
+**Fix: a web tab could not pick a file to upload.** Clicking a page's file
+field did nothing at all — no picker, no error, the field simply stayed empty.
+The tab had never been given the object WebKit asks for anything it cannot draw
+itself, so the request had nowhere to go and was dropped in silence. The same
+absence made JavaScript alerts, confirmations and prompts do nothing (a page
+waiting on a confirmation never continued), and made links that open in a new
+window dead on click. All three now work. The file picker opens in
+`~/.macmoba`, where pasted screenshots are kept, and shows hidden files.
+
+修正:Web 分頁沒辦法選檔案上傳。點頁面上的檔案欄位完全沒有反應——不跳選取視窗、
+也不報錯,欄位就一直是空的。這個分頁從來沒有被交付 WebKit 用來詢問「自己畫不出來的東西」
+的那個物件,所以請求沒有地方可去,無聲地被丟掉。同一個缺席也讓 JavaScript 的
+alert、confirm、prompt 全都沒有作用(頁面等在 confirm 就再也不會繼續),
+並且讓「在新視窗開啟」的連結點了沒反應。三者現在都正常。檔案選取視窗會開在
+`~/.macmoba`——貼上的截圖就放在那裡——並且會顯示隱藏檔案。
+
 ## 2.25
 
 **Fix: after releasing a captured remote desktop, every click became a right
