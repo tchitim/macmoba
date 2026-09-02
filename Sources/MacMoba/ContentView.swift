@@ -399,6 +399,9 @@ struct NonTerminalLeafView: View {
                 LocalTerminalHostView(tab: local, onFocus: { tab.focusedPaneID = local.id })
                     .background(Color(nsColor: app.theme.backgroundColor))
                     .overlay { DeadShellOverlay(shell: local) }
+            case .ghosttySSH(let ghost):
+                GhosttySSHPaneView(tab: ghost)
+                    .onAppear { tab.focusedPaneID = ghost.id }
             case .ghostty(let ghost):
                 // The package's own view, not a hand-rolled representable: the
                 // surface is created from viewDidMoveToWindow and getting that

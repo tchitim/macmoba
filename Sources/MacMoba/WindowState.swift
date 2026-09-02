@@ -192,6 +192,14 @@ final class WindowState: ObservableObject {
         selectedTabID = tab.id
     }
 
+    /// EXPERIMENTAL, see GhosttySSHTab: the selected session, drawn by
+    /// libghostty instead of SwiftTerm, for measuring one against the other.
+    func openGhosttySSH(for storedConfig: SessionConfig) {
+        let tab = SessionTab(ghosttySSH: app.resolved(storedConfig), app: app)
+        tabs.append(tab)
+        selectedTabID = tab.id
+    }
+
     /// EXPERIMENTAL, see GhosttyTerminalTab.
     func openGhosttyTerminal() {
         let tab = SessionTab(ghosttyShellIn: nil, app: app)

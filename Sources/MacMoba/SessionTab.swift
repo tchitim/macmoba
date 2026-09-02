@@ -28,6 +28,11 @@ final class SessionTab: ObservableObject, Identifiable {
         /// none of the logging, search, broadcast or ZMODEM plumbing those
         /// imply, and answering those queries with it would be a lie.
         case ghostty(GhosttyTerminalTab)
+        /// EXPERIMENTAL, see GhosttySSHTab: the same SSH session drawn by
+        /// libghostty. Separate from `.terminal` for the same reason as
+        /// `.ghostty` — it has none of the logging, search, broadcast or
+        /// ZMODEM plumbing that `.terminal` implies.
+        case ghosttySSH(GhosttySSHTab)
         case vnc(VNCTab)
         case rdp(RDPTab)
         case web(WebTab)
@@ -54,6 +59,7 @@ final class SessionTab: ObservableObject, Identifiable {
             case .terminal(let pane): return pane.config.id
             // No vault session behind a local shell; see PaneLayout.localShell.
             case .localShell, .ghostty: return ""
+            case .ghosttySSH(let pane): return pane.config.id
             case .vnc(let pane): return pane.config.id
             case .rdp(let pane): return pane.config.id
             case .web(let pane): return pane.config.id
@@ -65,6 +71,7 @@ final class SessionTab: ObservableObject, Identifiable {
             case .terminal(let pane): return pane.id
             case .localShell(let pane): return pane.id
             case .ghostty(let pane): return pane.id
+            case .ghosttySSH(let pane): return pane.id
             case .vnc(let pane): return pane.id
             case .rdp(let pane): return pane.id
             case .web(let pane): return pane.id
@@ -76,6 +83,7 @@ final class SessionTab: ObservableObject, Identifiable {
             case .terminal(let pane): return pane.state
             case .localShell(let pane): return pane.state
             case .ghostty(let pane): return pane.state
+            case .ghosttySSH(let pane): return pane.state
             case .vnc(let pane): return pane.state
             case .rdp(let pane): return pane.state
             case .web(let pane): return pane.state
@@ -87,6 +95,7 @@ final class SessionTab: ObservableObject, Identifiable {
             case .terminal(let pane): return pane.title
             case .localShell(let pane): return pane.title
             case .ghostty(let pane): return pane.displayTitle
+            case .ghosttySSH(let pane): return pane.displayTitle
             case .vnc(let pane): return pane.title
             case .rdp(let pane): return pane.title
             case .web(let pane): return pane.title
@@ -98,6 +107,7 @@ final class SessionTab: ObservableObject, Identifiable {
             case .terminal(let pane): pane.disconnect()
             case .localShell(let pane): pane.disconnect()
             case .ghostty(let pane): pane.disconnect()
+            case .ghosttySSH(let pane): pane.disconnect()
             case .vnc(let pane): pane.disconnect()
             case .rdp(let pane): pane.disconnect()
             case .web(let pane): pane.disconnect()
@@ -109,6 +119,7 @@ final class SessionTab: ObservableObject, Identifiable {
             case .terminal(let pane): return pane.objectWillChange
             case .localShell(let pane): return pane.objectWillChange
             case .ghostty(let pane): return pane.objectWillChange
+            case .ghosttySSH(let pane): return pane.objectWillChange
             case .vnc(let pane): return pane.objectWillChange
             case .rdp(let pane): return pane.objectWillChange
             case .web(let pane): return pane.objectWillChange
@@ -230,7 +241,7 @@ final class SessionTab: ObservableObject, Identifiable {
         switch node {
         case .leaf(.localShell):
             return .localShell
-        case .leaf(.ghostty):
+        case .leaf(.ghostty), .leaf(.ghosttySSH):
             // Deliberately saved as a leaf with no session id, which
             // `PaneLayout.pruned` then drops: an experimental pane should not
             // come back by itself after a restart. The rest of the split is
@@ -374,6 +385,18 @@ final class SessionTab: ObservableObject, Identifiable {
         pane.start(directory: directory)
     }
 
+    /// EXPERIMENTAL: an SSH session in a libghostty-drawn pane.
+    init(ghosttySSH config: SessionConfig, app: AppState) {
+        self.config = config
+        self.app = app
+        self.isFileBrowserOnly = false
+        let pane = GhosttySSHTab(config: config, app: app)
+        let content = PaneContent.ghosttySSH(pane)
+        root = .leaf(content)
+        focusedPaneID = pane.id
+        register(content)
+    }
+
     /// VNC tab: no pane tree, no SFTP — just the framebuffer.
     init(vnc config: SessionConfig, app: AppState) {
         self.config = config
@@ -463,7 +486,7 @@ final class SessionTab: ObservableObject, Identifiable {
             case .vnc: return .vnc
             case .rdp: return .rdp
             case .web: return .web
-            case .localShell, .ghostty: return .ssh
+            case .localShell, .ghostty, .ghosttySSH: return .ssh
             case .terminal(let pane):
                 if !isSinglePane { return pane.config.sessionKind }
             }
@@ -514,7 +537,7 @@ final class SessionTab: ObservableObject, Identifiable {
         // package's SwiftUI view, so this experimental pane has no Overview
         // thumbnail. Nil rather than a stand-in, which would show the wrong
         // pane's picture.
-        case .ghostty: return nil
+        case .ghostty, .ghosttySSH: return nil
         case .vnc(let pane): return pane.container
         case .rdp(let pane): return pane.container
         case .web(let pane): return pane.webView
@@ -787,6 +810,7 @@ final class SessionTab: ObservableObject, Identifiable {
         case .terminal(let pane): pane.connect()
         // Started at creation — its shell is a process, not a dial.
         case .localShell, .ghostty: break
+        case .ghosttySSH(let pane): pane.connect()
         case .vnc(let pane): pane.connect()
         case .rdp(let pane): pane.connect()
         case .web(let pane): pane.start()

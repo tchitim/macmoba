@@ -97,6 +97,12 @@ let package = Package(
         // The control-socket CLI (`macmoba list-tabs` …). Deliberately free of
         // NIO/Core: a plain blocking Unix-socket client, so it builds fast and
         // ships as a tiny helper binary inside the app bundle.
+        // Test-only seeder, see scripts/check-ghostty-ssh.sh.
+        .executableTarget(
+            name: "ghostty-ssh-seed",
+            dependencies: ["MacMobaCore"],
+            path: "Sources/ghostty-ssh-seed"
+        ),
         // Temporary probe, see scripts/check-ghostty-resources.sh.
         .executableTarget(
             name: "ghostty-resource-probe",

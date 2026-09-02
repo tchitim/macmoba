@@ -47,6 +47,38 @@ CJK 完整。數字可信。
 
 ⏳ **還沒有的是「快不快」的主觀結論**——那才是決定要不要真的換的依據。
 
+## 1c. SSH 也做了一個(2026-09-02),並在 loopback 上量到 7.2 倍
+
+`GhosttySSHTab`。比本機那個**還簡單**:`InMemoryTerminalSession` 本來就不知道
+PTY 的存在,而 `TerminalTransport` 已經是 write/resize/close,所以沒有
+`LocalProcess`、沒有 `TIOCSWINSZ`——resize 就是一個 SSH window-change。
+
+開發機實測(alpine 容器 sshd on 2222,`{ time cat /tmp/cjk.txt ; }`,13.6MB 中文):
+
+```
+libghostty   real 0m 0.12s     -> 114 MB/s
+SwiftTerm    real 0m 0.86s     ->  16 MB/s
+                                   7.2 倍
+```
+
+比本機 shell 的 2.95 倍**還大**。原因是本機那條路徑兩邊都被 PTY 與
+DispatchIO 綁著;走 SSH 時 SwiftTerm 仍然是**被自己的解析器綁住**
+(16 MB/s,和它 23 MB/s 的天花板同一個量級),而 libghostty 沒有。
+
+⚠️ **但這個 7.2 倍要打折看**:`time` 量的是**遠端的 `cat` 什麼時候返回**,
+而走 SSH 時 `cat` 只要把 bytes 塞進 SSH 的 flow-control window 就結束了,
+不必等終端機真的畫完。所以快的那一邊(0.12s)很可能**根本不是終端機在限速**,
+數字被高估;慢的那一邊(0.86s)才確定是終端機在限速。
+
+⚠️ **而且 loopback 是最快的可能連線**。真正要問的是使用者自己那台伺服器:
+在**現有的一般 SSH 分頁**裡 `time cat` 一個大中文檔,
+- 遠比 0.86s 慢 → 網路/遠端才是瓶頸,換終端機一點用都沒有
+- 落在 0.86s 附近 → 連線比終端機快,那 libghostty 才真的有東西可拿
+
+驗證過的還有:輸入送得到遠端、遠端 `stty size` 回報 33×124(跟 pane 相符,
+代表 resize 有變成 SSH window-change 送出去)、密碼認證通過
+(容器 log:`Accepted password for tester`)。
+
 ## 2. 擋路的:libghostty 沒有算繪
 
 `include/ghostty/vt/render.h` 有 33KB,但看內容全部是
