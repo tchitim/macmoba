@@ -136,7 +136,11 @@ final class AppState: ObservableObject {
             UserDefaults.standard.set(terminalMetalRenderer, forKey: TerminalDefaults.metalRendererKey)
             for tab in allTabs {
                 for local in tab.localShells {
-                    TerminalRendering.apply(to: local.termView, enabled: terminalMetalRenderer)
+                    // Nil with the libghostty engine, which draws on the GPU
+                    // unconditionally and has no CoreGraphics path to toggle.
+                    if let view = local.termView {
+                        TerminalRendering.apply(to: view, enabled: terminalMetalRenderer)
+                    }
                 }
                 for pane in tab.panes {
                     TerminalRendering.apply(to: pane.termView, enabled: terminalMetalRenderer)
@@ -216,7 +220,10 @@ final class AppState: ObservableObject {
     func applyThemeToAllPanes() {
         let theme = self.theme
         for tab in allTabs {
-            for local in tab.localShells { theme.apply(to: local.termView) }
+            // Themes still speak SwiftTerm's colour arrays; a libghostty pane
+            // takes colours through its controller instead and is skipped here
+            // rather than silently left on the wrong palette without saying so.
+            for local in tab.localShells { if let v = local.termView { theme.apply(to: v) } }
             for pane in tab.panes { theme.apply(to: pane.termView) }
         }
     }

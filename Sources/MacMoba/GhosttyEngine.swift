@@ -79,6 +79,8 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
 
     func engineFeed(_ bytes: ArraySlice<UInt8>) { session.receive(Data(bytes)) }
 
+    func engineSendText(_ text: String) { _ = surfaceState.surface?.sendText(text) }
+
     var engineGrid: (cols: Int, rows: Int) {
         guard let metrics = surfaceState.surfaceSize else { return (80, 24) }
         let cols = Int(metrics.columns), rows = Int(metrics.rows)

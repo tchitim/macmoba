@@ -493,7 +493,7 @@ final class WindowState: ObservableObject {
         let keystrokes = macro.keystrokes
         guard !keystrokes.isEmpty else { return }
         if let local = tab.localTerminal {
-            local.termView.send(txt: keystrokes)
+            local.engine.engineSendText(keystrokes)
             return
         }
         guard let pane = tab.focusedPane, pane.state == .connected else {

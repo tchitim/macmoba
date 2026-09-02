@@ -651,6 +651,15 @@ extension TerminalTab {
 /// Hosts the terminal view and reports focus: SwiftTerm's responder overrides
 /// aren't `open`, so focus is detected by observing the window's firstResponder.
 final class PaneContainerView: NSView {
+    /// Asked to take the keyboard once this container is actually in a window.
+    ///
+    /// A one-shot `DispatchQueue.main.async` right after construction is a
+    /// guess about when SwiftUI will have placed the view, and it loses: the
+    /// SSH pane happened to win that race and the local shell did not, leaving
+    /// a shell that ran, drew, and ignored the keyboard. Asking on window
+    /// entry is the event itself rather than an approximation of it.
+    var onEnteredWindow: (() -> Void)?
+
     /// Whatever the engine draws into — SwiftTerm's view or libghostty's
     /// hosted surface. Typed as NSView so this container never has to know.
     let termView: NSView
@@ -691,8 +700,12 @@ final class PaneContainerView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        // Going on screen is exactly when a container must own its terminal.
-        if window != nil { adoptTerminal() }
+        // Going on screen is exactly when a container must own its terminal,
+        // and when it can hand it the keyboard.
+        if window != nil {
+            adoptTerminal()
+            onEnteredWindow?()
+        }
         guard let window else {
             observation = nil
             return
@@ -735,9 +748,7 @@ struct TerminalHostView: NSViewRepresentable {
     func makeNSView(context: Context) -> PaneContainerView {
         let container = PaneContainerView(termView: tab.engine.engineView)
         container.onFocusGained = { [weak tab] in tab?.onFocused?() }
-        DispatchQueue.main.async { [weak tab] in
-            tab?.engine.engineTakeFocus()
-        }
+        container.onEnteredWindow = { [weak tab] in tab?.engine.engineTakeFocus() }
         return container
     }
 

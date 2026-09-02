@@ -39,7 +39,9 @@ import SwiftTerm
 /// Only operations with a real caller are here. An earlier draft also had a
 /// `send` for injecting typed bytes, on the assumption that broadcast and
 /// macros went through the view; they write straight to the connection, so it
-/// had no callers and was removed rather than implemented twice. Bracketed
+/// had no callers in that byte-slice shape and was removed. It came back as
+/// `engineSendText`, because macros fired at a LOCAL shell do go through the
+/// view — the removal was one grep short. Bracketed
 /// paste went the same way: only the clipboard menu asks, it asks the concrete
 /// view, and libghostty frames pastes itself so the question does not arise
 /// there.
@@ -50,6 +52,12 @@ protocol TerminalEngineView: AnyObject {
 
     /// Bytes arriving from the far end.
     func engineFeed(_ bytes: ArraySlice<UInt8>)
+
+    /// Type text into the terminal as though the user had, so it travels the
+    /// same path a keystroke does. A macro fired at a local shell needs this:
+    /// there is no connection to write to, and the PTY is reached through the
+    /// terminal's own input handling.
+    func engineSendText(_ text: String)
 
     /// The grid, which the transport must be told about so the remote wraps in
     /// the right place.
@@ -143,6 +151,8 @@ final class SwiftTermEngine: NSObject, TerminalEngineView {
     var engineView: NSView { view }
 
     func engineFeed(_ bytes: ArraySlice<UInt8>) { view.feed(byteArray: bytes) }
+
+    func engineSendText(_ text: String) { view.send(txt: text) }
 
     var engineGrid: (cols: Int, rows: Int) {
         let terminal = view.getTerminal()
