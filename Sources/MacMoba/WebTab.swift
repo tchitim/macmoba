@@ -134,6 +134,7 @@ final class WebTab: NSObject, ObservableObject, Identifiable {
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.allowsBackForwardNavigationGestures = true
         view.navigationDelegate = self
+        view.uiDelegate = self
         webView = view
 
         observations = [
@@ -233,6 +234,108 @@ extension WebTab: WKScriptMessageHandler {
         Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             if statusLine == notice { statusLine = bypassesTunnel ? tunnelWarning : "" }
+        }
+    }
+}
+
+// The UI delegate. Without one, WebKit has nowhere to present anything it
+// cannot draw itself, and simply does nothing — silently.
+//
+// That is how "cannot browse for a file to upload" happened: a page's
+// `<input type="file">` asks the UI delegate for an open panel, and with no
+// delegate the click is swallowed and the field stays empty forever. The same
+// gap makes `alert`/`confirm`/`prompt` no-ops — a page blocking on `confirm()`
+// simply never continues — and makes a `target="_blank"` link dead, which on
+// the internal consoles this tab exists for is most of the navigation.
+extension WebTab: WKUIDelegate {
+    func webView(_ webView: WKWebView,
+                 runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        // Pasted screenshots land in ~/.macmoba, which is where an upload after
+        // a paste is usually headed; a dotted folder is otherwise unreachable
+        // in an open panel without ⇧⌘. — so start there when it exists.
+        let pasteDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".macmoba")
+        if FileManager.default.fileExists(atPath: pasteDir.path) {
+            panel.directoryURL = pasteDir
+        }
+        panel.showsHiddenFiles = true
+        guard let window = webView.window else {
+            // No window to hang a sheet on: answering nil is required, because
+            // WebKit holds the page's file input blocked until this is called.
+            return completionHandler(nil)
+        }
+        panel.beginSheetModal(for: window) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = frame.request.url?.host ?? "Web page"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        Self.present(alert, on: webView.window) { _ in completionHandler() }
+    }
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = frame.request.url?.host ?? "Web page"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        Self.present(alert, on: webView.window) { completionHandler($0 == .alertFirstButtonReturn) }
+    }
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (String?) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = frame.request.url?.host ?? "Web page"
+        alert.informativeText = prompt
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = defaultText ?? ""
+        alert.accessoryView = field
+        Self.present(alert, on: webView.window) { response in
+            completionHandler(response == .alertFirstButtonReturn ? field.stringValue : nil)
+        }
+    }
+
+    /// A `target="_blank"` link or `window.open`. There is no second tab to
+    /// open it in, so load it here — dropping it looks like a broken link.
+    func webView(_ webView: WKWebView,
+                 createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction,
+                 windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if navigationAction.targetFrame == nil, let url = navigationAction.request.url {
+            webView.load(URLRequest(url: url))
+        }
+        return nil
+    }
+
+    /// Sheet when there is a window, free-standing when there is not. Every
+    /// caller here owes WebKit a completion, so both paths must run it.
+    private static func present(_ alert: NSAlert, on window: NSWindow?,
+                                then finish: @escaping (NSApplication.ModalResponse) -> Void) {
+        if let window {
+            alert.beginSheetModal(for: window) { finish($0) }
+        } else {
+            finish(alert.runModal())
         }
     }
 }
