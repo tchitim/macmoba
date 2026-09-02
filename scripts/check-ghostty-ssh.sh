@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Exercise the experimental libghostty SSH pane against a throwaway server.
+# Exercise an SSH session against a throwaway server, on either engine.
 #
 # Deliberately a container and not this Mac's sshd: testing should not require
 # adding a key to ~/.ssh/authorized_keys, which is a change to who can log in.
@@ -32,7 +32,8 @@ cat <<TXT
 Now:
   open -a ./MacMoba.app --env MACMOBA_DATA_DIR=$dir
   unlock with: testpassword123
-  Session > Connect in libghostty (experimental) > ghostty-ssh-test
+  set the engine first:  defaults write dev.macmoba.MacMoba terminalEngine -bool true
+  then open the session normally (Session > Connect Selected Session)
   trust the host key when asked
 
 To compare throughput, in each pane:

@@ -192,20 +192,7 @@ final class WindowState: ObservableObject {
         selectedTabID = tab.id
     }
 
-    /// EXPERIMENTAL, see GhosttySSHTab: the selected session, drawn by
-    /// libghostty instead of SwiftTerm, for measuring one against the other.
-    func openGhosttySSH(for storedConfig: SessionConfig) {
-        let tab = SessionTab(ghosttySSH: app.resolved(storedConfig), app: app)
-        tabs.append(tab)
-        selectedTabID = tab.id
-    }
 
-    /// EXPERIMENTAL, see GhosttyTerminalTab.
-    func openGhosttyTerminal() {
-        let tab = SessionTab(ghosttyShellIn: nil, app: app)
-        tabs.append(tab)
-        selectedTabID = tab.id
-    }
 
     /// Open a tab for every session in the group (pairs well with MultiExec).
     /// Cycle to the next tab whose pane wants the user (cmux jump-to-unread).
@@ -316,11 +303,6 @@ final class WindowState: ObservableObject {
         app.saveOpenWorkspace()
     }
 
-    /// EXPERIMENTAL, see GhosttyTerminalTab.
-    func splitWithGhosttyShell(_ axis: Axis) {
-        selectedTab?.splitFocusedWithGhosttyShell(axis)
-        app.saveOpenWorkspace()
-    }
 
     func splitWithNewConnection(_ config: SessionConfig, axis: Axis) {
         _ = selectedTab?.splitFocused(axis, with: app.resolved(config))

@@ -110,13 +110,6 @@ struct MacMobaCommands: Commands {
             Button("New Local Terminal") { window?.openLocalTerminal() }
                 .keyboardShortcut("t", modifiers: [.command])
                 .disabled(window == nil)
-            // EXPERIMENTAL (see GhosttyTerminalTab): the same local shell drawn
-            // by libghostty instead of SwiftTerm, for side-by-side comparison.
-            Button("New libghostty Terminal (experimental)") {
-                window?.openGhosttyTerminal()
-            }
-            .keyboardShortcut("t", modifiers: [.command, .control])
-            .disabled(window == nil)
             Button("Quick Connect…") { window?.showQuickConnect = true }
                 .keyboardShortcut("k", modifiers: [.command])
                 .disabled(window == nil)
@@ -138,17 +131,6 @@ struct MacMobaCommands: Commands {
             }
             .keyboardShortcut(.return, modifiers: [.command])
             .disabled(window?.selectedSessionID == nil)
-            // EXPERIMENTAL, see GhosttySSHTab: the same session drawn by
-            // libghostty instead of SwiftTerm, so the two can be timed side by
-            // side. A submenu of sessions rather than "the selected one",
-            // because the latter does nothing at all when the sidebar
-            // selection is empty, and gives no hint why.
-            Menu("Connect in libghostty (experimental)") {
-                ForEach(app.data.sessions.filter { $0.sessionKind == .ssh }) { session in
-                    Button(session.name) { window?.openGhosttySSH(for: session) }
-                }
-            }
-            .disabled(window == nil || !app.data.sessions.contains { $0.sessionKind == .ssh })
             Button("Disconnect Tab") { window?.closeSelectedTab() }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
                 .disabled(window?.selectedTab == nil)
