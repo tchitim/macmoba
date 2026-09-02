@@ -491,15 +491,15 @@ final class WindowState: ObservableObject {
             MacroBroadcastPrompt.confirm(
                 macro: macro,
                 targets: targets,
-                window: pane.termView.window,
+                window: pane.engine.engineView.window,
                 onSuppress: { [weak app] in app?.confirmBroadcastMacros = false }
             ) { [weak pane] confirmed in
                 guard confirmed, let pane else { return }
-                pane.termView.send(txt: keystrokes)
+                pane.engine.engineSendText(keystrokes)
             }
             return
         }
-        pane.termView.send(txt: keystrokes)
+        pane.engine.engineSendText(keystrokes)
     }
 }
 

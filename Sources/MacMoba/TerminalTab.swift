@@ -16,10 +16,13 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
 
     let id = UUID()
     let config: SessionConfig
-    /// SwiftTerm's view. Still named concretely because search reads its
-    /// buffer types and themes set its colour arrays; both are called out in
-    /// TerminalEngine.swift as the two things not yet behind the seam.
-    let termView: TerminalView
+    /// SwiftTerm's view, or nil when libghostty is drawing this pane.
+    ///
+    /// Only the clipboard menu still needs it — it is reached through the
+    /// AppKit responder chain and asks the concrete type. Building one anyway
+    /// under the other engine was worse than useless: the Overview
+    /// photographed that never-drawn view and showed a blank card.
+    let termView: TerminalView?
     /// Everything else goes through here, so the engine can be swapped.
     let engine: any TerminalEngineView
 
@@ -85,17 +88,18 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         self.config = config
         self.app = app
         self.title = config.name
-        let view = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
-        self.termView = view
-        // The SwiftTerm view is built either way: search and themes still read
-        // it directly, and an unused one costs a view rather than a session.
-        self.engine = TerminalDefaults.usesGhosttyEngine()
-            ? GhosttyEngine()
-            : SwiftTermEngine(view: view)
+        if TerminalDefaults.usesGhosttyEngine() {
+            self.termView = nil
+            self.engine = GhosttyEngine()
+        } else {
+            let view = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+            self.termView = view
+            self.engine = SwiftTermEngine(view: view)
+        }
         // SwiftTerm keeps 500 lines unless told otherwise — a few seconds of a
         // build log.
         engine.engineSetScrollback(TerminalDefaults.scrollback())
-        TerminalRendering.apply(to: termView)
+        if let termView { TerminalRendering.apply(to: termView) }
         super.init()
         wireEngine()
         applyFont(size: app.terminalFontSize)

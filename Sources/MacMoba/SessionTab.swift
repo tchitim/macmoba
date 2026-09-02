@@ -479,8 +479,8 @@ final class SessionTab: ObservableObject, Identifiable {
         // The pane in front, whatever it is — a thumbnail of the desktop beside
         // the shell should show whichever one you were last looking at.
         switch focusedContent {
-        case .terminal(let pane): return pane.termView
-        case .localShell(let pane): return pane.termView
+        case .terminal(let pane): return pane.engine.engineView
+        case .localShell(let pane): return pane.engine.engineView
         // No AppKit view to hand over: the libghostty surface is owned by the
         // package's SwiftUI view, so this experimental pane has no Overview
         // thumbnail. Nil rather than a stand-in, which would show the wrong
@@ -682,7 +682,7 @@ final class SessionTab: ObservableObject, Identifiable {
             guard let self else { return }
             for pane in self.panes { pane.syncRemoteSize() }
             if let focused = self.focusedPane {
-                focused.termView.window?.makeFirstResponder(focused.termView)
+                focused.engine.engineTakeFocus()
             }
         }
     }

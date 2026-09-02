@@ -143,7 +143,9 @@ final class AppState: ObservableObject {
                     }
                 }
                 for pane in tab.panes {
-                    TerminalRendering.apply(to: pane.termView, enabled: terminalMetalRenderer)
+                    if let view = pane.termView {
+                        TerminalRendering.apply(to: view, enabled: terminalMetalRenderer)
+                    }
                 }
             }
         }
