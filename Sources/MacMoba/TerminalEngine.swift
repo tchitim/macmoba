@@ -20,8 +20,14 @@
 //     through its controller config instead, which is a different shape rather
 //     than a missing call.
 //
-// Both keep talking to the concrete type until then. That is visible in the
-// code rather than hidden behind a protocol that only one engine can satisfy.
+//   - THE CLIPBOARD MENU is handed a raw view by the AppKit responder chain,
+//     so it reads selection and bracketed-paste state off the concrete type.
+//     Routing that means giving the responder chain something engine-agnostic
+//     to find, which is a change to how the menu is reached rather than to
+//     what it does.
+//
+// All three keep talking to the concrete type until then. That is visible in
+// the code rather than hidden behind a protocol only one engine can satisfy.
 
 import AppKit
 import Foundation
@@ -67,38 +73,91 @@ protocol TerminalEngineView: AnyObject {
     /// True when this view holds the keyboard, which decides whether a pane
     /// counts as focused.
     var engineHasKeyboardFocus: Bool { get }
+
+    // What the terminal tells the app. Closures rather than a delegate
+    // protocol, because a delegate would have to be spelled in one engine's
+    // types — `TerminalViewDelegate` names SwiftTerm's TerminalView in every
+    // method — and that is exactly the coupling this seam exists to remove.
+
+    /// The user typed, pasted, or the terminal answered a device query. These
+    /// bytes go to the far end.
+    var engineOnInput: ((ArraySlice<UInt8>) -> Void)? { get set }
+    /// The grid changed, so the far end has to be told.
+    var engineOnResize: ((Int, Int) -> Void)? { get set }
+    var engineOnTitle: ((String) -> Void)? { get set }
+    var engineOnBell: (() -> Void)? { get set }
+    /// A clicked hyperlink (OSC 8).
+    var engineOnOpenLink: ((String) -> Void)? { get set }
+    /// The remote asked to put something on the clipboard (OSC 52).
+    var engineOnClipboardCopy: ((Data) -> Void)? { get set }
 }
 
 // MARK: - SwiftTerm
 
-extension TerminalView: TerminalEngineView {
-    var engineView: NSView { self }
+/// Wraps SwiftTerm behind the seam.
+///
+/// A wrapper rather than a conformance on `TerminalView` itself, because the
+/// callbacks above are stored properties and an extension cannot add those.
+/// It also puts SwiftTerm's delegate in one place instead of making every tab
+/// implement a protocol written in SwiftTerm's own types.
+@MainActor
+final class SwiftTermEngine: NSObject, TerminalEngineView {
+    let view: TerminalView
 
-    func engineFeed(_ bytes: ArraySlice<UInt8>) { feed(byteArray: bytes) }
+    var engineOnInput: ((ArraySlice<UInt8>) -> Void)?
+    var engineOnResize: ((Int, Int) -> Void)?
+    var engineOnTitle: ((String) -> Void)?
+    var engineOnBell: (() -> Void)?
+    var engineOnOpenLink: ((String) -> Void)?
+    var engineOnClipboardCopy: ((Data) -> Void)?
 
-    func engineSend(_ bytes: ArraySlice<UInt8>) { send(data: bytes) }
+    /// Callers that still need SwiftTerm specifically — search reads its buffer
+    /// types, themes set its colour arrays. Both are named in this file's
+    /// header as the two things not yet behind the seam.
+    var swiftTermView: TerminalView { view }
+
+    /// - Parameter installDelegate: whether this wrapper should become the
+    ///   view's `terminalDelegate`.
+    ///
+    ///   False for a `LocalProcessTerminalView`, which **is its own delegate** —
+    ///   `MacLocalTerminalView.swift:85` sets `terminalDelegate = self`, and
+    ///   that is the path its keystrokes take to the PTY. Taking it over
+    ///   disconnects the shell silently: the terminal still draws, the tests
+    ///   still pass, and nothing you type arrives. Which is exactly what
+    ///   happened the first time this wrapper went in.
+    init(view: TerminalView, installDelegate: Bool = true) {
+        self.view = view
+        super.init()
+        if installDelegate { view.terminalDelegate = self }
+    }
+
+    var engineView: NSView { view }
+
+    func engineFeed(_ bytes: ArraySlice<UInt8>) { view.feed(byteArray: bytes) }
+
+    func engineSend(_ bytes: ArraySlice<UInt8>) { view.send(data: bytes) }
 
     var engineGrid: (cols: Int, rows: Int) {
-        let terminal = getTerminal()
+        let terminal = view.getTerminal()
         return (terminal.cols, terminal.rows)
     }
 
-    func engineSetScrollback(_ lines: Int) { getTerminal().changeScrollback(lines) }
+    func engineSetScrollback(_ lines: Int) { view.getTerminal().changeScrollback(lines) }
 
-    var engineBracketedPaste: Bool { getTerminal().bracketedPasteMode }
+    var engineBracketedPaste: Bool { view.getTerminal().bracketedPasteMode }
 
     func engineSetFontSize(_ size: Double) {
-        font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        view.font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
-    func engineSelection() -> String? { getSelection() }
+    func engineSelection() -> String? { view.getSelection() }
 
-    func engineSelectAll() { selectAll(nil) }
+    func engineSelectAll() { view.selectAll(nil) }
 
-    func engineScroll(toRow row: Int) { scrollTo(row: row) }
+    func engineScroll(toRow row: Int) { view.scrollTo(row: row) }
 
     func engineDumpText() -> String {
-        let terminal = getTerminal()
+        let terminal = view.getTerminal()
         let (_, rows) = terminal.getDims()
         let top = terminal.getTopVisibleRow()
         var lines: [String] = []
@@ -111,6 +170,44 @@ extension TerminalView: TerminalEngineView {
     }
 
     var engineHasKeyboardFocus: Bool {
-        window?.isKeyWindow == true && window?.firstResponder === self
+        view.window?.isKeyWindow == true && view.window?.firstResponder === view
     }
+}
+
+// MARK: - SwiftTerm's delegate, translated into the seam's callbacks
+//
+// Everything SwiftTerm reports arrives here in its own vocabulary and leaves
+// as a plain closure call, so the rest of the app never names a SwiftTerm type
+// to find out that the user typed something.
+extension SwiftTermEngine: TerminalViewDelegate {
+    func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        engineOnInput?(data)
+    }
+
+    func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+        engineOnResize?(newCols, newRows)
+    }
+
+    func setTerminalTitle(source: TerminalView, title: String) {
+        engineOnTitle?(title)
+    }
+
+    func bell(source: TerminalView) {
+        engineOnBell?()
+    }
+
+    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+        engineOnOpenLink?(link)
+    }
+
+    func clipboardCopy(source: TerminalView, content: Data) {
+        engineOnClipboardCopy?(content)
+    }
+
+    // Not routed through the seam because nothing in this app acted on them
+    // even when SwiftTerm offered them. Adding closures nobody calls would
+    // make the protocol look richer than the behaviour behind it.
+    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+    func scrolled(source: TerminalView, position: Double) {}
+    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 }

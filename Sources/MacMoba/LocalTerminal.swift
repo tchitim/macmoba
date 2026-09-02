@@ -10,6 +10,10 @@ import SwiftUI
 final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     let id = UUID()
     let termView: LocalProcessTerminalView
+    /// The same seam the SSH pane uses. A local shell keeps its concrete view
+    /// as well, because the PTY lives on it (`startProcess`, `processDelegate`)
+    /// and that has no engine-agnostic shape yet.
+    let engine: any TerminalEngineView
 
     @Published var title = "Local"
     @Published var state: TerminalTab.State = .connecting
@@ -21,7 +25,8 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     init(app: AppState) {
         self.app = app
         termView = ClipboardLocalTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
-        termView.engineSetScrollback(TerminalDefaults.scrollback())
+        engine = SwiftTermEngine(view: termView, installDelegate: false)
+        engine.engineSetScrollback(TerminalDefaults.scrollback())
         TerminalRendering.apply(to: termView)
         super.init()
         (termView as? ClipboardLocalTerminalView)?.owner = self
@@ -86,7 +91,7 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     }
 
     func applyFont(size: Double) {
-        termView.engineSetFontSize(size)
+        engine.engineSetFontSize(size)
     }
 
     func markAttention() { needsAttention = true }

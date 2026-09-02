@@ -16,7 +16,12 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
 
     let id = UUID()
     let config: SessionConfig
+    /// SwiftTerm's view. Still named concretely because search reads its
+    /// buffer types and themes set its colour arrays; both are called out in
+    /// TerminalEngine.swift as the two things not yet behind the seam.
     let termView: TerminalView
+    /// Everything else goes through here, so the engine can be swapped.
+    let engine: any TerminalEngineView
 
     @Published var state: State = .connecting
     /// This pane rang the bell or resumed after silence while nobody was
@@ -80,13 +85,15 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         self.config = config
         self.app = app
         self.title = config.name
-        self.termView = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+        let view = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+        self.termView = view
+        self.engine = SwiftTermEngine(view: view)
         // SwiftTerm keeps 500 lines unless told otherwise — a few seconds of a
         // build log.
-        termView.engineSetScrollback(TerminalDefaults.scrollback())
+        engine.engineSetScrollback(TerminalDefaults.scrollback())
         TerminalRendering.apply(to: termView)
         super.init()
-        termView.terminalDelegate = self
+        wireEngine()
         applyFont(size: app.terminalFontSize)
         app.theme.apply(to: termView)
     }
@@ -182,7 +189,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         // A fresh attempt starts with a clean message area; connection progress
         // itself is the status bar's persistent left side, driven by `state`.
         clearStatus()
-        let grid = termView.engineGrid
+        let grid = engine.engineGrid
         Task {
             do {
                 let conn: any TerminalTransport
@@ -349,7 +356,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
             }
         }
         DispatchQueue.main.async { [weak self] in
-            self?.termView.engineFeed(ArraySlice([UInt8](data)))
+            self?.engine.engineFeed(ArraySlice([UInt8](data)))
         }
     }
 
@@ -415,7 +422,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
     /// Plain text of the whole buffer (scrollback + visible screen).
     @MainActor
     func dumpScrollback() -> String {
-        termView.engineDumpText()
+        engine.engineDumpText()
     }
 
     private func stopLogging() {
@@ -462,7 +469,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
     @MainActor
     private func applyAttention(_ trigger: AttentionDetector.Trigger) {
         let activelyWatched = NSApp.isActive
-            && termView.engineHasKeyboardFocus
+            && engine.engineHasKeyboardFocus
         guard !activelyWatched else { return }
         needsAttention = true
         // Away from the app entirely → a system notification carries the pane
@@ -549,23 +556,73 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
 
 // MARK: - SwiftTerm delegate
 
-extension TerminalTab: TerminalViewDelegate {
-    func send(source: TerminalView, data: ArraySlice<UInt8>) {
-        let bytes = Data(data)
-        Task { @MainActor in
-            if case .closed = state {
-                // Nothing can be typed into a dead session, so the only keys
-                // that mean anything are the two ways out of it.
-                switch DeadTerminalKey.action(for: Array(bytes)) {
-                case .reconnect: connect(); return
-                case .close: app?.closePaneHoldingDeadTerminal(self); return
-                case .ignore: return
+extension TerminalTab {
+    /// Hooks this tab up to whichever engine is drawing it.
+    ///
+    /// These were SwiftTerm delegate methods. The bodies are unchanged; only
+    /// the way they are reached is — so a second engine can deliver the same
+    /// events without this file naming its types.
+    @MainActor
+    func wireEngine() {
+        engine.engineOnInput = { [weak self] data in
+            guard let self else { return }
+            let bytes = Data(data)
+            Task { @MainActor in
+                if case .closed = self.state {
+                    // Nothing can be typed into a dead session, so the only keys
+                    // that mean anything are the two ways out of it.
+                    switch DeadTerminalKey.action(for: Array(bytes)) {
+                    case .reconnect: self.connect(); return
+                    case .close: self.app?.closePaneHoldingDeadTerminal(self); return
+                    case .ignore: return
+                    }
+                }
+                if let app = self.app, app.broadcastInput {
+                    app.broadcastWrite(bytes, from: self.id)
+                } else {
+                    self.connection?.write(bytes)
                 }
             }
-            if let app, app.broadcastInput {
-                app.broadcastWrite(bytes, from: self.id)
-            } else {
-                connection?.write(bytes)
+        }
+
+        engine.engineOnResize = { [weak self] cols, rows in
+            self?.connection?.resize(cols: cols, rows: rows)
+        }
+
+        engine.engineOnTitle = { [weak self] title in
+            guard let self else { return }
+            Task { @MainActor in
+                self.title = title.isEmpty ? self.config.name : title
+            }
+        }
+
+        engine.engineOnOpenLink = { link in
+            if let url = URL(string: link) { NSWorkspace.shared.open(url) }
+        }
+
+        engine.engineOnClipboardCopy = { content in
+            if let str = String(data: content, encoding: .utf8) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(str, forType: .string)
+            }
+        }
+
+        // Terminal bell -> macOS notification, so a long-running command can
+        // tell you it finished while MacMoba is in the background. Suppressed
+        // while the app is frontmost (you can already see it) and rate-limited,
+        // because some shells ring the bell on every tab-completion.
+        engine.engineOnBell = { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                guard !NSApp.isActive else { return }
+                let now = Date()
+                guard now.timeIntervalSince(Self.lastBell) > 5 else { return }
+                Self.lastBell = now
+                let note = NSUserNotification()
+                note.title = "MacMoba — \(self.config.name)"
+                note.informativeText = "The session rang the terminal bell."
+                NSUserNotificationCenter.default.deliver(note)
+                NSApp.requestUserAttention(.informationalRequest)
             }
         }
     }
@@ -574,51 +631,6 @@ extension TerminalTab: TerminalViewDelegate {
     var broadcastPane: BroadcastPane {
         BroadcastPane(id: id, isConnected: state == .connected,
                       receivesBroadcast: receivesBroadcast)
-    }
-
-    func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-        connection?.resize(cols: newCols, rows: newRows)
-    }
-
-    func setTerminalTitle(source: TerminalView, title: String) {
-        Task { @MainActor in
-            self.title = title.isEmpty ? config.name : title
-        }
-    }
-
-    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-
-    func scrolled(source: TerminalView, position: Double) {}
-
-    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-        if let url = URL(string: link) { NSWorkspace.shared.open(url) }
-    }
-
-    func clipboardCopy(source: TerminalView, content: Data) {
-        if let str = String(data: content, encoding: .utf8) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(str, forType: .string)
-        }
-    }
-
-    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
-
-    /// Terminal bell → macOS notification, so a long-running command can tell
-    /// you it finished while MacMoba is in the background. Suppressed while the
-    /// app is frontmost (you can already see it) and rate-limited, because some
-    /// shells ring the bell on every tab-completion.
-    func bell(source: TerminalView) {
-        Task { @MainActor in
-            guard !NSApp.isActive else { return }
-            let now = Date()
-            guard now.timeIntervalSince(Self.lastBell) > 5 else { return }
-            Self.lastBell = now
-            let note = NSUserNotification()
-            note.title = "MacMoba — \(config.name)"
-            note.informativeText = "The session rang the terminal bell."
-            NSUserNotificationCenter.default.deliver(note)
-            NSApp.requestUserAttention(.informationalRequest)
-        }
     }
 
     @MainActor private static var lastBell = Date.distantPast
@@ -695,13 +707,13 @@ extension TerminalTab {
     /// implicit resize chain can be missed.
     @MainActor
     func syncRemoteSize() {
-        let grid = termView.engineGrid
+        let grid = engine.engineGrid
         connection?.resize(cols: grid.cols, rows: grid.rows)
     }
 
     @MainActor
     func applyFont(size: Double) {
-        termView.engineSetFontSize(size)
+        engine.engineSetFontSize(size)
     }
 }
 

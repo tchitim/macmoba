@@ -50,7 +50,7 @@ enum TerminalClipboard {
     /// settled; a plain click clears the selection first so it is a no-op.
     static func copyOnSelectIfEnabled(_ view: TerminalView) {
         guard ClipboardPrefs.shared.copyOnSelect,
-              let text = view.engineSelection(), !text.isEmpty else { return }
+              let text = view.getSelection(), !text.isEmpty else { return }
         write(text)
     }
 
@@ -119,7 +119,7 @@ enum TerminalClipboard {
     /// as typed keys (this is what stops a pasted newline from running in zsh).
     static func send(_ text: String, to view: TerminalView) {
         guard !text.isEmpty else { return }
-        let bracketed = view.engineBracketedPaste
+        let bracketed = view.getTerminal().bracketedPasteMode
         if bracketed { view.send(data: EscapeSequences.bracketedPasteStart[0...]) }
         view.send(txt: text)
         if bracketed { view.send(data: EscapeSequences.bracketedPasteEnd[0...]) }
