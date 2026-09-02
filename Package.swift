@@ -24,6 +24,7 @@ let package = Package(
         // patch from outside. Branched from 1.15.0; Vendor/SwiftTerm/README.md
         // records what was changed and how to re-verify and re-sync it.
         .package(path: "Vendor/SwiftTerm"),
+        .package(url: "https://github.com/Lakr233/libghostty-spm.git", from: "1.4.0"),
         // Pinned by revision, not version: RoyalVNC's vendored C targets carry
         // -Wno-* warning suppressions, which SwiftPM classes as "unsafe flags"
         // and refuses in a versioned dependency. The flags are harmless and a
@@ -100,6 +101,7 @@ let package = Package(
                 "MacMobaCore",
                 "CMacMobaRDP",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
+                .product(name: "GhosttyTerminal", package: "libghostty-spm"),
                 .product(name: "RoyalVNCKit", package: "royalvnc"),
             ]
         ),

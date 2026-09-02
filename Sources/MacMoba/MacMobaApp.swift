@@ -110,6 +110,13 @@ struct MacMobaCommands: Commands {
             Button("New Local Terminal") { window?.openLocalTerminal() }
                 .keyboardShortcut("t", modifiers: [.command])
                 .disabled(window == nil)
+            // EXPERIMENTAL (see GhosttyTerminalTab): the same local shell drawn
+            // by libghostty instead of SwiftTerm, for side-by-side comparison.
+            Button("New libghostty Terminal (experimental)") {
+                window?.openGhosttyTerminal()
+            }
+            .keyboardShortcut("t", modifiers: [.command, .control])
+            .disabled(window == nil)
             Button("Quick Connect…") { window?.showQuickConnect = true }
                 .keyboardShortcut("k", modifiers: [.command])
                 .disabled(window == nil)

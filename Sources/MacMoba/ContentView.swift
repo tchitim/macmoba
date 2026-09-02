@@ -168,6 +168,10 @@ struct SplitMenu: View {
                     Button("New Local Terminal") {
                         window.splitWithLocalShell(axis)
                     }
+                    // EXPERIMENTAL, see GhosttyTerminalTab.
+                    Button("New libghostty Terminal (experimental)") {
+                        window.splitWithGhosttyShell(axis)
+                    }
                     // Every kind, not just terminals: a remote desktop beside a
                     // shell is exactly what people ask splits for. Serial is the
                     // one exception — one port, one connection.
@@ -395,6 +399,8 @@ struct NonTerminalLeafView: View {
                 LocalTerminalHostView(tab: local, onFocus: { tab.focusedPaneID = local.id })
                     .background(Color(nsColor: app.theme.backgroundColor))
                     .overlay { DeadShellOverlay(shell: local) }
+            case .ghostty(let ghost):
+                GhosttyTerminalHostView(tab: ghost, onFocus: { tab.focusedPaneID = ghost.id })
             case .terminal: EmptyView()   // handled by PaneLeafView
             }
         }

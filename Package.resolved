@@ -10,6 +10,24 @@
       }
     },
     {
+      "identity" : "libghostty-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Lakr233/libghostty-spm.git",
+      "state" : {
+        "revision" : "e6255b49fa697a41d8fbcce07f999d84a6c56dcb",
+        "version" : "1.5.1"
+      }
+    },
+    {
+      "identity" : "msdisplaylink",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Lakr233/MSDisplayLink.git",
+      "state" : {
+        "revision" : "87eb0af130744c8cbe2e31b6e1a5bcd659f1c220",
+        "version" : "2.2.0"
+      }
+    },
+    {
       "identity" : "royalvnc",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/royalapplications/royalvnc.git",

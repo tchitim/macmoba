@@ -22,6 +22,12 @@ final class SessionTab: ObservableObject, Identifiable {
     enum PaneContent {
         case terminal(TerminalTab)
         case localShell(LocalTerminalTab)
+        /// EXPERIMENTAL, see GhosttyTerminalTab: a local shell drawn by
+        /// libghostty, so the two engines can be compared side by side in one
+        /// window. Kept out of `terminal` and `localShell` on purpose — it has
+        /// none of the logging, search, broadcast or ZMODEM plumbing those
+        /// imply, and answering those queries with it would be a lie.
+        case ghostty(GhosttyTerminalTab)
         case vnc(VNCTab)
         case rdp(RDPTab)
         case web(WebTab)
@@ -47,7 +53,7 @@ final class SessionTab: ObservableObject, Identifiable {
             switch self {
             case .terminal(let pane): return pane.config.id
             // No vault session behind a local shell; see PaneLayout.localShell.
-            case .localShell: return ""
+            case .localShell, .ghostty: return ""
             case .vnc(let pane): return pane.config.id
             case .rdp(let pane): return pane.config.id
             case .web(let pane): return pane.config.id
@@ -58,6 +64,7 @@ final class SessionTab: ObservableObject, Identifiable {
             switch self {
             case .terminal(let pane): return pane.id
             case .localShell(let pane): return pane.id
+            case .ghostty(let pane): return pane.id
             case .vnc(let pane): return pane.id
             case .rdp(let pane): return pane.id
             case .web(let pane): return pane.id
@@ -68,6 +75,7 @@ final class SessionTab: ObservableObject, Identifiable {
             switch self {
             case .terminal(let pane): return pane.state
             case .localShell(let pane): return pane.state
+            case .ghostty(let pane): return pane.state
             case .vnc(let pane): return pane.state
             case .rdp(let pane): return pane.state
             case .web(let pane): return pane.state
@@ -78,6 +86,7 @@ final class SessionTab: ObservableObject, Identifiable {
             switch self {
             case .terminal(let pane): return pane.title
             case .localShell(let pane): return pane.title
+            case .ghostty(let pane): return pane.title
             case .vnc(let pane): return pane.title
             case .rdp(let pane): return pane.title
             case .web(let pane): return pane.title
@@ -88,6 +97,7 @@ final class SessionTab: ObservableObject, Identifiable {
             switch self {
             case .terminal(let pane): pane.disconnect()
             case .localShell(let pane): pane.disconnect()
+            case .ghostty(let pane): pane.disconnect()
             case .vnc(let pane): pane.disconnect()
             case .rdp(let pane): pane.disconnect()
             case .web(let pane): pane.disconnect()
@@ -98,6 +108,7 @@ final class SessionTab: ObservableObject, Identifiable {
             switch self {
             case .terminal(let pane): return pane.objectWillChange
             case .localShell(let pane): return pane.objectWillChange
+            case .ghostty(let pane): return pane.objectWillChange
             case .vnc(let pane): return pane.objectWillChange
             case .rdp(let pane): return pane.objectWillChange
             case .web(let pane): return pane.objectWillChange
@@ -219,6 +230,13 @@ final class SessionTab: ObservableObject, Identifiable {
         switch node {
         case .leaf(.localShell):
             return .localShell
+        case .leaf(.ghostty):
+            // Deliberately saved as a leaf with no session id, which
+            // `PaneLayout.pruned` then drops: an experimental pane should not
+            // come back by itself after a restart. The rest of the split is
+            // kept, because pruning collapses the gap rather than discarding
+            // its sibling.
+            return .leaf(sessionID: "")
         case .leaf(let content):
             return .leaf(sessionID: content.sessionID)
         case .empty:
@@ -343,6 +361,19 @@ final class SessionTab: ObservableObject, Identifiable {
         local.start(directory: directory)
     }
 
+    /// EXPERIMENTAL: a tab holding one libghostty-drawn local shell.
+    init(ghosttyShellIn directory: String?, app: AppState) {
+        self.config = SessionConfig(name: "libghostty", host: "localhost", username: NSUserName())
+        self.app = app
+        self.isFileBrowserOnly = false
+        let pane = GhosttyTerminalTab()
+        let content = PaneContent.ghostty(pane)
+        root = .leaf(content)
+        focusedPaneID = pane.id
+        register(content)
+        pane.start(directory: directory)
+    }
+
     /// VNC tab: no pane tree, no SFTP — just the framebuffer.
     init(vnc config: SessionConfig, app: AppState) {
         self.config = config
@@ -432,7 +463,7 @@ final class SessionTab: ObservableObject, Identifiable {
             case .vnc: return .vnc
             case .rdp: return .rdp
             case .web: return .web
-            case .localShell: return .ssh
+            case .localShell, .ghostty: return .ssh
             case .terminal(let pane):
                 if !isSinglePane { return pane.config.sessionKind }
             }
@@ -479,6 +510,7 @@ final class SessionTab: ObservableObject, Identifiable {
         switch focusedContent {
         case .terminal(let pane): return pane.termView
         case .localShell(let pane): return pane.termView
+        case .ghostty(let pane): return pane.termView
         case .vnc(let pane): return pane.container
         case .rdp(let pane): return pane.container
         case .web(let pane): return pane.webView
@@ -573,6 +605,21 @@ final class SessionTab: ObservableObject, Identifiable {
         }
         focusedPaneID = local.id
         local.start(directory: nil)
+        settleLayout()
+    }
+
+    /// EXPERIMENTAL: put a libghostty-drawn shell beside the focused pane, so
+    /// the two engines can be watched running the same thing at the same time.
+    func splitFocusedWithGhosttyShell(_ axis: Axis) {
+        guard let target = focusedContent, !isSinglePane else { return }
+        let pane = GhosttyTerminalTab()
+        let content = PaneContent.ghostty(pane)
+        register(content)
+        root = Self.replacing(root, paneID: target.id) { leaf in
+            .split(axis: axis, id: UUID(), first: leaf, second: .leaf(content))
+        }
+        focusedPaneID = pane.id
+        pane.start(directory: nil)
         settleLayout()
     }
 
@@ -735,7 +782,7 @@ final class SessionTab: ObservableObject, Identifiable {
         switch content {
         case .terminal(let pane): pane.connect()
         // Started at creation — its shell is a process, not a dial.
-        case .localShell: break
+        case .localShell, .ghostty: break
         case .vnc(let pane): pane.connect()
         case .rdp(let pane): pane.connect()
         case .web(let pane): pane.start()

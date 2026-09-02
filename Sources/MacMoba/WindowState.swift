@@ -192,6 +192,13 @@ final class WindowState: ObservableObject {
         selectedTabID = tab.id
     }
 
+    /// EXPERIMENTAL, see GhosttyTerminalTab.
+    func openGhosttyTerminal() {
+        let tab = SessionTab(ghosttyShellIn: nil, app: app)
+        tabs.append(tab)
+        selectedTabID = tab.id
+    }
+
     /// Open a tab for every session in the group (pairs well with MultiExec).
     /// Cycle to the next tab whose pane wants the user (cmux jump-to-unread).
     func jumpToAttention() {
@@ -298,6 +305,12 @@ final class WindowState: ObservableObject {
     /// a shell is the point of this, not an edge case.
     func splitWithLocalShell(_ axis: Axis) {
         selectedTab?.splitFocusedWithLocalShell(axis)
+        app.saveOpenWorkspace()
+    }
+
+    /// EXPERIMENTAL, see GhosttyTerminalTab.
+    func splitWithGhosttyShell(_ axis: Axis) {
+        selectedTab?.splitFocusedWithGhosttyShell(axis)
         app.saveOpenWorkspace()
     }
 
