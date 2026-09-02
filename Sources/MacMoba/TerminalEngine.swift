@@ -34,6 +34,12 @@ import Foundation
 import MacMobaCore
 import SwiftTerm
 
+/// This app's colour scheme type, spelled unambiguously.
+///
+/// `TerminalTheme` exists in both this app and GhosttyTerminal, and the engine
+/// that has to convert between them imports both.
+typealias AppTerminalTheme = TerminalTheme
+
 /// What this app needs from a terminal, independent of who draws it.
 ///
 /// Only operations with a real caller are here. An earlier draft also had a
@@ -67,6 +73,9 @@ protocol TerminalEngineView: AnyObject {
     func engineSetScrollback(_ lines: Int)
 
     func engineSetFontSize(_ size: Double)
+
+    /// Restyle without touching the scrollback.
+    func engineApplyTheme(_ theme: AppTerminalTheme)
 
     /// Selected text, or nil when there is no selection.
     func engineSelection() -> String?
@@ -164,6 +173,8 @@ final class SwiftTermEngine: NSObject, TerminalEngineView {
     func engineSetFontSize(_ size: Double) {
         view.font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
+
+    func engineApplyTheme(_ theme: AppTerminalTheme) { theme.apply(to: view) }
 
     func engineSelection() -> String? { view.getSelection() }
 

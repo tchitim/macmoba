@@ -98,11 +98,39 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
     func engineSetScrollback(_ lines: Int) {}
 
     func engineSetFontSize(_ size: Double) {
-        // Deliberately unimplemented for now: font size is a controller config
-        // value here, not a property of the view, so changing it means
-        // rebuilding the controller and with it the surface — which would
-        // discard the scrollback. Wiring it properly is part of restoring the
-        // view-level settings, and doing it badly would silently clear panes.
+        fontSize = size
+        pushConfiguration()
+    }
+
+    func engineApplyTheme(_ theme: AppTerminalTheme) {
+        // libghostty takes colours as config text, so the app's hex strings go
+        // in almost unchanged — no 16-bit channel conversion like SwiftTerm's.
+        // Light and dark get the same values because MacMoba's themes are
+        // absolute rather than adaptive; handing only one would leave the other
+        // appearance on ghostty's defaults.
+        let config = GhosttyTerminal.TerminalConfiguration { builder in
+            builder.withCustom("background", theme.background)
+            builder.withCustom("foreground", theme.foreground)
+            builder.withCustom("cursor-color", theme.cursor)
+            for (index, hex) in theme.ansi.enumerated() {
+                builder.withCustom("palette", "\(index)=\(hex)")
+            }
+        }
+        let scheme = GhosttyTerminal.TerminalTheme(light: config, dark: config)
+        _ = surfaceState.controller.setTheme(scheme)
+    }
+
+    private var fontSize: Double = 0
+
+    /// Font size is a config value here rather than a view property, and the
+    /// controller applies config changes to the live surface, so this keeps
+    /// the scrollback.
+    private func pushConfiguration() {
+        guard fontSize > 0 else { return }
+        let config = GhosttyTerminal.TerminalConfiguration { builder in
+            builder.withCustom("font-size", String(Int(fontSize.rounded())))
+        }
+        _ = surfaceState.controller.setTerminalConfiguration(config)
     }
 
     func engineSelection() -> String? {

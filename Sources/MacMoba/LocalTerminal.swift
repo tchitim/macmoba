@@ -49,10 +49,7 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
             engine = SwiftTermEngine(view: view)
         }
         engine.engineSetScrollback(TerminalDefaults.scrollback())
-        if let termView {
-            TerminalRendering.apply(to: termView)
-            app.theme.apply(to: termView)
-        }
+        if let termView { TerminalRendering.apply(to: termView) }
         super.init()
 
         bridge.onData = { [weak self] slice in
@@ -89,6 +86,7 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
         }
 
         applyFont(size: app.terminalFontSize)
+        engine.engineApplyTheme(app.theme)
     }
 
     func start(directory: String? = nil) {

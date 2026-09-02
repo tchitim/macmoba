@@ -99,7 +99,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         super.init()
         wireEngine()
         applyFont(size: app.terminalFontSize)
-        app.theme.apply(to: termView)
+        engine.engineApplyTheme(app.theme)
     }
 
     /// Redial after the Mac wakes, but only when it makes sense: the pane must

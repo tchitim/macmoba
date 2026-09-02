@@ -220,11 +220,10 @@ final class AppState: ObservableObject {
     func applyThemeToAllPanes() {
         let theme = self.theme
         for tab in allTabs {
-            // Themes still speak SwiftTerm's colour arrays; a libghostty pane
-            // takes colours through its controller instead and is skipped here
-            // rather than silently left on the wrong palette without saying so.
-            for local in tab.localShells { if let v = local.termView { theme.apply(to: v) } }
-            for pane in tab.panes { theme.apply(to: pane.termView) }
+            // Through the seam: SwiftTerm takes colour arrays, libghostty takes
+            // config text, and neither spelling belongs here.
+            for local in tab.localShells { local.engine.engineApplyTheme(theme) }
+            for pane in tab.panes { pane.engine.engineApplyTheme(theme) }
         }
     }
 

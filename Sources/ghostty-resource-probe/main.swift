@@ -28,4 +28,18 @@ if !carried {
     print("--- rendered config ---")
     print(rendered.prefix(600))
 }
+// Does a palette/theme reach the rendered config? Same question as the
+// scrollback probe above, for the values the app's colour schemes turn into.
+let themeConfig = MainActor.assumeIsolated {
+    TerminalConfiguration { builder in
+        builder.withCustom("background", "#123456")
+        builder.withCustom("palette", "3=#abcdef")
+    }
+}
+let themed = MainActor.assumeIsolated {
+    let c = TerminalController(theme: TerminalTheme(light: themeConfig, dark: themeConfig))
+    return c.renderedConfig
+}
+print("theme reaches config: \(themed.contains("#123456") && themed.contains("3=#abcdef") ? "YES" : "NO")")
+
 exit(dir != nil && terminfo != nil && carried ? 0 : 1)
