@@ -158,10 +158,30 @@ channel 都已經編進 FreeRDP 了，只差接線與 UI：
 
 還沒做的:
 
-1. **Metal 算繪完全沒被量到** — `testDrawTime` 用 `cacheDisplay(in:to:)`
-   畫進 bitmap rep,那條路**強制走 CoreGraphics**;Metal 要有真的 layer／window
-   才會啟用。所以上表的 draw 數字全是 CG fallback,而 README 寫的「選用 GPU 算繪、
-   拖曳選取明顯更順」**目前沒有數字支撐**。要量得寫成 UI 測試或 app 內的隱藏量測。
+~~1. Metal 算繪完全沒被量到~~ ✅ **量到了**(`scripts/check-metal-in-app.sh`,
+   `Sources/terminal-render-bench`):把終端機放進真的視窗、關掉 vsync、
+   數**真正畫出來的** frame。
+
+   | 視窗 | CoreGraphics | Metal | 倍數 |
+   |---|---|---|---|
+   | 1200×800 | 4.0 ms(250 fps) | **0.7 ms(1450 fps)** | ~6× |
+   | 2560×1440 | 8.5 ms(117 fps) | **0.97 ms(1035 fps)** | ~8.8× |
+
+   **README 那句「明顯更順」是真的,而且解析度越高差越多。**
+   實務上的意義在 60fps 的 16.7 ms 預算:1440p 單格 CG 就吃掉 8.5ms(51%),
+   **四格分割 34ms 直接超支**;Metal 四格只要 3.9ms(23%)。
+   也就是說 GPU 算繪**正好在這個 App 的主場景**(大視窗＋分割)才真的重要。
+
+   ⚠️ 量測上有兩個坑,都寫在 `terminal-render-bench` 的註解裡:
+   (a) 先前用「餵一段資料計時」量到的是**解析器**不是算繪(6.4MB/0.14s = 45 MB/s);
+   (b) 直接數 `draw(in:)` 會得到 40,000 fps ——因為 renderer 拿不到 frame semaphore
+   時會立刻返回,那些空轉也被算進去了。真正畫出來的 frame 要用耗時區分
+   (4,473 次有畫 vs 114,748 次空轉)。
+
+   ✅ **也驗過在打包後的 .app 裡 Metal 真的會啟用**(shader 在
+   `Contents/Resources` 的 SwiftPM 資源包裡,並把 `.build` 那份藏起來)。
+   這件事值得單獨驗:libghostty 那邊就是栽在同一類問題上,而 SwiftTerm 的
+   `MetalTerminalRenderer.candidateBundles` 正是為此手寫的繞法——它成立。
 2. **draw 隨 pane 數線性成長,而分割正是本 App 的賣點** — 1440p 一格就吃掉
    60fps 預算(16.7 ms)的一半,四格必然超支。上表是單一 view,是樂觀下限。
 3. **混合內容仍走慢路徑** — `handlePrint` 的 ASCII 批次寫入是**整段全有全無**:

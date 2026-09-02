@@ -35,14 +35,34 @@ public enum TerminalDefaults {
 // the stutter people report when dragging a selection across a big window.
 // SwiftTerm's Metal path marks only the dirty rows instead.
 //
-// It stays opt-in because it is a renderer swap: it allocates an MTKView,
-// rebinds on every window change, and falls back to CoreGraphics if the GPU
-// pipeline fails to build. Off by default means a bug here can never break a
-// terminal for someone who never asked for it.
+// ON by default since the renderer was actually measured. It was opt-in while
+// the only argument for it was the reasoning above; `terminal-render-bench`
+// now puts a terminal in a real window, disables vsync and counts frames that
+// really drew:
+//
+//     1200x800    CoreGraphics 4.0 ms (250 fps)    Metal 0.70 ms (1450 fps)
+//     2560x1440   CoreGraphics 8.5 ms (117 fps)    Metal 0.97 ms (1035 fps)
+//
+// Against the 16.7 ms frame budget that is the difference between fitting and
+// not: at 1440p CoreGraphics spends 8.5 ms on ONE pane, so four panes overrun
+// at 34 ms, while Metal's four cost 3.9 ms. A large window, split, is this
+// app's ordinary case rather than an edge one.
+//
+// The caution that kept it off is still respected rather than discarded.
+// `setUseMetal` throws instead of trapping when the device or pipeline cannot
+// be built, SwiftTerm falls back to CoreGraphics on a later rebind failure,
+// and `TerminalRendering.apply` logs rather than propagates — so the failure
+// mode is a terminal that draws the old way, not one that does not draw.
+// Metal starting inside a packaged .app was verified too
+// (scripts/check-metal-in-app.sh), because a shader bundle that resolves only
+// on the build machine is exactly how the libghostty spike broke.
+//
+// Anyone who explicitly turned it off keeps it off: this reads the stored
+// value first and only falls back to the default when none was ever set.
 public extension TerminalDefaults {
     static let metalRendererKey = "terminalMetalRenderer"
 
     static func usesMetalRenderer(from defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: metalRendererKey) as? Bool ?? false
+        defaults.object(forKey: metalRendererKey) as? Bool ?? true
     }
 }

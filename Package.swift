@@ -109,6 +109,13 @@ let package = Package(
             dependencies: [.product(name: "GhosttyTerminal", package: "libghostty-spm")],
             path: "Sources/ghostty-resource-probe"
         ),
+        // Measures the Metal renderer, which the throughput benchmark cannot
+        // reach because cacheDisplay always takes the CoreGraphics path.
+        .executableTarget(
+            name: "terminal-render-bench",
+            dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm")],
+            path: "Sources/terminal-render-bench"
+        ),
         .executableTarget(
             name: "macmoba-cli",
             path: "Sources/macmoba-cli"
