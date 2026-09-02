@@ -21,6 +21,15 @@ enum TerminalRendering {
     static func apply(to view: TerminalView, enabled: Bool = TerminalDefaults.usesMetalRenderer()) {
         do {
             try view.setUseMetal(enabled)
+            // Says which renderer a pane ended up on. Worth a line in the log:
+            // Metal silently falling back to CoreGraphics looks identical from
+            // the outside, and "is the GPU actually being used" was otherwise
+            // unanswerable without attaching a debugger — which is a poor
+            // position to be in for the setting that is now the default.
+            // .notice, not .info: info-level messages live in memory and never
+            // reach `log show`, which makes them useless for the question this
+            // line exists to answer after the fact.
+            renderLog.notice("terminal renderer: \(enabled ? "Metal" : "CoreGraphics", privacy: .public)")
         } catch {
             renderLog.error("Metal renderer unavailable, staying on CoreGraphics: \(String(describing: error))")
         }

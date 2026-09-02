@@ -34,8 +34,10 @@ final class TerminalDefaultsTests: XCTestCase {
     /// if the GPU path ever misbehaves, the people affected opted in.
     func testGPURenderingIsOffUntilAskedFor() {
         let defaults = UserDefaults(suiteName: "metal-unset")!
+        // Metal is the default since it was measured at 6-9x the CoreGraphics
+        // frame rate; see the comment on usesMetalRenderer.
         defaults.removeObject(forKey: TerminalDefaults.metalRendererKey)
-        XCTAssertFalse(TerminalDefaults.usesMetalRenderer(from: defaults))
+        XCTAssertTrue(TerminalDefaults.usesMetalRenderer(from: defaults))
     }
 
     func testGPURenderingHonoursBothStoredAnswers() {
