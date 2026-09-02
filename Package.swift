@@ -89,6 +89,13 @@ let package = Package(
         // The control-socket CLI (`macmoba list-tabs` …). Deliberately free of
         // NIO/Core: a plain blocking Unix-socket client, so it builds fast and
         // ships as a tiny helper binary inside the app bundle.
+        // Measures the Metal renderer, which the throughput benchmark cannot
+        // reach because cacheDisplay always takes the CoreGraphics path.
+        .executableTarget(
+            name: "terminal-render-bench",
+            dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm")],
+            path: "Sources/terminal-render-bench"
+        ),
         .executableTarget(
             name: "macmoba-cli",
             path: "Sources/macmoba-cli"
