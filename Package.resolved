@@ -10,15 +10,6 @@
       }
     },
     {
-      "identity" : "libghostty-spm",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Lakr233/libghostty-spm.git",
-      "state" : {
-        "revision" : "e6255b49fa697a41d8fbcce07f999d84a6c56dcb",
-        "version" : "1.5.1"
-      }
-    },
-    {
       "identity" : "msdisplaylink",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Lakr233/MSDisplayLink.git",
