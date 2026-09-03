@@ -9,6 +9,41 @@
 
 import Foundation
 
+/// Which pasted images have outlived their welcome.
+///
+/// Nothing used to remove these, so `~/.macmoba` on a machine you paste into
+/// grows forever — thirty files and 9.6MB on the author's own after a
+/// fortnight, none of them distinguishable from the outside.
+///
+/// Split out from the upload so the rule can be tested without a server, and
+/// because deciding what to delete on someone else's machine deserves to be
+/// readable on its own.
+public enum RemotePasteRetention {
+    public static let defaultMaxAge: TimeInterval = 7 * 24 * 60 * 60
+
+    /// Names safe to delete: ours, and older than `maxAge`.
+    ///
+    /// Deliberately narrow. Only `paste-<digits>.png` is considered — exactly
+    /// the shape this file writes — so anything else that happens to live in
+    /// that directory is left alone no matter how old it is. A name that does
+    /// not parse is kept rather than guessed about.
+    ///
+    /// Age comes from the timestamp in the name rather than the file's mtime:
+    /// that is the moment of the paste, it is what this code chose, and it
+    /// cannot be moved by a later transfer touching the file.
+    public static func expired(names: [String], now: Date,
+                               maxAge: TimeInterval = defaultMaxAge) -> [String] {
+        let cutoff = now.timeIntervalSince1970 - maxAge
+        return names.filter { name in
+            guard name.hasPrefix("paste-"), name.hasSuffix(".png") else { return false }
+            let digits = name.dropFirst("paste-".count).dropLast(".png".count)
+            guard !digits.isEmpty, digits.allSatisfy(\.isNumber),
+                  let stamp = TimeInterval(digits) else { return false }
+            return stamp < cutoff
+        }
+    }
+}
+
 public enum RemotePasteUpload {
     /// Upload `data` and return the remote path it landed on.
     ///
@@ -44,6 +79,28 @@ public enum RemotePasteUpload {
         try data.write(to: staging)
         defer { try? FileManager.default.removeItem(at: staging) }
         try await client.upload(localURL: staging, to: remotePath)
+
+        // Sweep old pastes, best effort and only after the upload has
+        // succeeded: losing an image because tidying failed would be a poor
+        // trade, and a sweep that runs first could delete the only copy of
+        // something if the upload then fails.
+        await sweepExpired(in: dir, using: client)
         return remotePath
+    }
+
+    /// Delete pasted images older than the retention window.
+    ///
+    /// Every failure is swallowed: this is housekeeping on someone else's
+    /// machine, and no part of it is worth failing a paste over. A directory
+    /// that cannot be listed, or a file that will not delete, simply stays.
+    static func sweepExpired(in directory: String, using client: SFTPClient,
+                             now: Date = Date(),
+                             maxAge: TimeInterval = RemotePasteRetention.defaultMaxAge) async {
+        guard let items = try? await client.list(directory) else { return }
+        let doomed = RemotePasteRetention.expired(names: items.map(\.name),
+                                                  now: now, maxAge: maxAge)
+        for name in doomed {
+            try? await client.removeFile(directory + "/" + name)
+        }
     }
 }
