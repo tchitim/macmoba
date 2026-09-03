@@ -43,6 +43,23 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         return host
     }()
 
+    /// libghostty's view, subclassed only to replace its context menu.
+    ///
+    /// `selectionContextMenu()` is `open` and offers Copy alone; MacMoba's has
+    /// Paste and Paste as One Line too, and paste-as-one-line is the reason the
+    /// app has its own in the first place. `menu(for:)` is overridden as well
+    /// so a right-click outside the selection still gets a menu — the
+    /// package returns none there.
+    private final class MenuTerminalView: GhosttyTerminal.TerminalView {
+        weak var menuTarget: ClipboardMenuTarget?
+        override func menu(for event: NSEvent) -> NSMenu? { menuTarget?.menu() }
+        override func selectionContextMenu() -> NSMenu {
+            menuTarget?.menu() ?? super.selectionContextMenu()
+        }
+    }
+
+    private var menuTarget: ClipboardMenuTarget?
+
     override init() {
         // libghostty calls these from its own terminal IO thread, so nothing
         // here may assume the main actor — asserting it aborts the process,
@@ -64,6 +81,15 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
             Task { @MainActor in self?.engineOnResize?(cols, rows) }
         }
         surfaceState.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
+        // The package builds its platform view through this hook, which is how
+        // the subclass gets in without reimplementing the representable.
+        let target = ClipboardMenuTarget(engine: self)
+        menuTarget = target
+        surfaceState.makePlatformView = {
+            let view = MenuTerminalView(frame: .zero)
+            view.menuTarget = target
+            return view
+        }
 
         titleObservation = surfaceState.$title.sink { [weak self] title in
             Task { @MainActor in self?.engineOnTitle?(title) }
@@ -138,10 +164,19 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         return surface.readSelection()
     }
 
-    func engineSelectAll() {
-        // No select-all in the package's surface API. `readViewportText` gets
-        // the text but cannot make a visible selection, so claiming this works
-        // would give a Select All menu item that appears to do nothing.
+    var engineHasSelection: Bool { surfaceState.surface?.hasSelection() ?? false }
+
+    /// No select-all in the package's surface API, so the menu leaves the item
+    /// out rather than offering one that does nothing.
+    var engineCanSelectAll: Bool { false }
+
+    func engineSelectAll() {}
+
+    /// libghostty frames the paste itself — a program that asked for bracketed
+    /// paste receives it framed — so this is one call where SwiftTerm needs
+    /// the escape sequences added by hand.
+    func enginePaste(_ text: String) {
+        _ = surfaceState.paste(text: text)
     }
 
     func engineScroll(toRow row: Int) {

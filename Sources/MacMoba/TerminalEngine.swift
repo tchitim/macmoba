@@ -79,7 +79,15 @@ protocol TerminalEngineView: AnyObject {
 
     /// Selected text, or nil when there is no selection.
     func engineSelection() -> String?
+    var engineHasSelection: Bool { get }
     func engineSelectAll()
+    /// False where the engine has no select-all, so the menu can leave the
+    /// item out instead of offering one that does nothing.
+    var engineCanSelectAll: Bool { get }
+
+    /// Paste text as a paste rather than as typed keys, so a newline in it
+    /// lands in the shell's edit line instead of running.
+    func enginePaste(_ text: String)
 
     /// Bring a row into view — where a search result lands.
     func engineScroll(toRow row: Int)
@@ -194,6 +202,21 @@ final class SwiftTermEngine: NSObject, TerminalEngineView {
     func engineApplyTheme(_ theme: AppTerminalTheme) { theme.apply(to: view) }
 
     func engineSelection() -> String? { view.getSelection() }
+
+    var engineHasSelection: Bool { view.selectionActive }
+
+    var engineCanSelectAll: Bool { true }
+
+    /// Bracketed paste is honoured here, because SwiftTerm leaves that to the
+    /// caller. libghostty frames pastes itself, which is why its version of
+    /// this is a single call.
+    func enginePaste(_ text: String) {
+        guard !text.isEmpty else { return }
+        let bracketed = view.getTerminal().bracketedPasteMode
+        if bracketed { view.send(data: EscapeSequences.bracketedPasteStart[0...]) }
+        view.send(txt: text)
+        if bracketed { view.send(data: EscapeSequences.bracketedPasteEnd[0...]) }
+    }
 
     func engineSelectAll() { view.selectAll(nil) }
 

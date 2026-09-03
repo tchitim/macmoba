@@ -325,3 +325,66 @@ final class ClipboardLocalTerminalView: LocalProcessTerminalView {
         return super.validateUserInterfaceItem(item)
     }
 }
+
+// MARK: - Engine-based context menu
+//
+// The menu above targets SwiftTerm's view and its selectors, which only exists
+// on one of the two engines. This builds the same menu against the seam, so a
+// libghostty pane gets a real right-click menu rather than an empty one.
+
+/// Carries the menu's actions. AppKit needs an `@objc` target, and the engine
+/// is a protocol existential, so this sits between them.
+@MainActor
+final class ClipboardMenuTarget: NSObject {
+    private let engine: any TerminalEngineView
+
+    init(engine: any TerminalEngineView) {
+        self.engine = engine
+        super.init()
+    }
+
+    @objc func copySelection(_ sender: Any?) {
+        guard let text = engine.engineSelection(), !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    @objc func pasteClipboard(_ sender: Any?) {
+        guard let text = TerminalClipboard.clipboardText(), !text.isEmpty else { return }
+        engine.enginePaste(text)
+    }
+
+    @objc func pasteAsOneLine(_ sender: Any?) {
+        guard let text = TerminalClipboard.clipboardText(), !text.isEmpty else { return }
+        engine.enginePaste(PasteGuard.singleLine(text))
+    }
+
+    @objc func selectAll(_ sender: Any?) {
+        engine.engineSelectAll()
+    }
+
+    func menu() -> NSMenu {
+        let hasClipboard = TerminalClipboard.clipboardText()?.isEmpty == false
+        let menu = NSMenu()
+        // Set explicitly for the same reason the SwiftTerm menu does it:
+        // automatic validation rejects selectors it does not recognise.
+        menu.autoenablesItems = false
+        add(menu, "Copy", #selector(copySelection(_:)), engine.engineHasSelection)
+        add(menu, "Paste", #selector(pasteClipboard(_:)), hasClipboard)
+        add(menu, "Paste as One Line", #selector(pasteAsOneLine(_:)), hasClipboard)
+        // Only where the engine actually has one; libghostty does not, and an
+        // item that quietly does nothing is worse than a shorter menu.
+        if engine.engineCanSelectAll {
+            menu.addItem(.separator())
+            add(menu, "Select All", #selector(selectAll(_:)), true)
+        }
+        return menu
+    }
+
+    private func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ enabled: Bool) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.isEnabled = enabled
+        menu.addItem(item)
+    }
+}
