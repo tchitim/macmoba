@@ -151,6 +151,18 @@ void macmoba_rdp_set_file_callbacks(MacMobaRDP *rdp,
 /// paths; NULL or empty withdraws the offer.
 void macmoba_rdp_offer_files(MacMobaRDP *rdp, const char *paths);
 
+/// Offer everything the local pasteboard holds, in ONE announcement.
+///
+/// Use this rather than calling the two above in sequence. Each of those sends
+/// its own format list, so a text copy announced twice a millisecond apart —
+/// and the first of the pair was built from the PREVIOUS contents, which on a
+/// fresh copy is an empty list. An empty format list means "my clipboard is now
+/// empty", so the session was told the clipboard was cleared and then, out of
+/// sequence, that it held text. A format list is also supposed to wait for its
+/// format list response before the next one is sent.
+void macmoba_rdp_offer_all(MacMobaRDP *rdp, const char *paths, const char *utf8,
+                           const uint8_t *dib, uint32_t dibLen);
+
 /// Ask for a byte range of remote file `index`. The reply arrives on the chunk
 /// callback tagged with `requestId`. Returns false if files are not on offer.
 bool macmoba_rdp_request_file_range(MacMobaRDP *rdp, uint32_t requestId,

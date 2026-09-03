@@ -4,6 +4,20 @@ Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.
 
+## 2.27
+
+**Fix: copying on the Mac and pasting into a Windows RDP session did nothing.**
+Every copy told the session two contradictory things a millisecond apart —
+first that the clipboard had been emptied, then that it held text — because
+files and text were announced separately and the first announcement was built
+from the previous contents. Windows kept the wrong one. One copy now makes one
+announcement, covering text, images and files together.
+
+修正:在 Mac 複製、到 Windows RDP 分頁貼上沒有反應。每一次複製都會在一毫秒內
+對遠端說兩件互相矛盾的事——先說「剪貼簿已清空」,再說「裡面有文字」——因為檔案和
+文字是分開宣告的,而第一次宣告是用**上一次**的內容算出來的。Windows 留下了錯的那一份。
+現在一次複製只送一次宣告,文字、圖片、檔案一起。
+
 ## 2.26
 
 **Fix: a web tab could not pick a file to upload.** Clicking a page's file

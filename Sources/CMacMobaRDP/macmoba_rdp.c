@@ -786,8 +786,14 @@ static UINT mm_cliprdr_send_format_list(MacMobaRDP *rdp, bool haveText, bool hav
     // It showed up on RECONNECT because the Mac pasteboard already holds
     // something by then, so the very first poll has files to offer. A first
     // connection usually has nothing to say and slips through.
-    if (!rdp->clipboardReady)
+    if (!rdp->clipboardReady) {
+        // Said out loud, because a silent skip here is indistinguishable from
+        // a successful announcement that the server ignored — and telling
+        // those two apart is most of diagnosing "paste does nothing".
+        WLog_INFO("com.macmoba.rdp",
+                  "not announcing clipboard yet: capability exchange incomplete");
         return CHANNEL_RC_OK;
+    }
 
     bool haveFiles;
     EnterCriticalSection(&rdp->clipboardLock);
@@ -1319,6 +1325,36 @@ void macmoba_rdp_offer_files(MacMobaRDP *rdp, const char *paths)
     const bool haveImage = rdp->pendingLocalDib != NULL;
     LeaveCriticalSection(&rdp->clipboardLock);
     WLog_INFO("com.macmoba.rdp", "offering local clipboard: files=%d", haveFiles);
+    mm_cliprdr_send_format_list(rdp, haveText, haveImage);
+}
+
+void macmoba_rdp_offer_all(MacMobaRDP *rdp, const char *paths, const char *utf8,
+                           const uint8_t *dib, uint32_t dibLen)
+{
+    if (!rdp)
+        return;
+    EnterCriticalSection(&rdp->clipboardLock);
+    free(rdp->pendingLocalFiles);
+    rdp->pendingLocalFiles = (paths && *paths) ? _strdup(paths) : NULL;
+    free(rdp->pendingLocalText);
+    rdp->pendingLocalText = (utf8 && *utf8) ? _strdup(utf8) : NULL;
+    free(rdp->pendingLocalDib);
+    rdp->pendingLocalDib = NULL;
+    rdp->pendingLocalDibLen = 0;
+    if (dib && dibLen) {
+        rdp->pendingLocalDib = malloc(dibLen);
+        if (rdp->pendingLocalDib) {
+            memcpy(rdp->pendingLocalDib, dib, dibLen);
+            rdp->pendingLocalDibLen = dibLen;
+        }
+    }
+    const bool haveFiles = rdp->pendingLocalFiles != NULL;
+    const bool haveText = rdp->pendingLocalText != NULL;
+    const bool haveImage = rdp->pendingLocalDib != NULL;
+    LeaveCriticalSection(&rdp->clipboardLock);
+    WLog_INFO("com.macmoba.rdp",
+              "offering local clipboard: files=%d text=%d image=%d",
+              haveFiles, haveText, haveImage);
     mm_cliprdr_send_format_list(rdp, haveText, haveImage);
 }
 
