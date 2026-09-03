@@ -170,6 +170,17 @@ final class SwiftTermEngine: NSObject, TerminalEngineView {
     var engineOnOpenLink: ((String) -> Void)?
     var engineOnClipboardCopy: ((Data) -> Void)?
 
+    /// The pane this draws for.
+    ///
+    /// Exists because the clipboard reaches a terminal through the AppKit
+    /// responder chain, holds only the view, and used to recover the tab with
+    /// `terminalDelegate as? TerminalTab`. Once this wrapper became the
+    /// delegate that cast returned nil for every pane, and pasting a
+    /// screenshot into an SSH session silently stopped uploading — it fell
+    /// through to the text path and did nothing visible. No test noticed,
+    /// because what broke was a cast, not a behaviour anything asserts on.
+    weak var owner: TerminalTab?
+
     /// Callers that still need SwiftTerm specifically — search reads its buffer
     /// types, themes set its colour arrays. Both are named in this file's
     /// header as the two things not yet behind the seam.

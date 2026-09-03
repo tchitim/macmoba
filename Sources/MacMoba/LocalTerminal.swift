@@ -46,6 +46,9 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
         } else {
             let view = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
             termView = view
+            // No owner set on purpose: `owner` is how the clipboard finds an
+            // SSH tab to upload a pasted image to, and a local shell has
+            // nowhere to upload to — the file would already be on this Mac.
             engine = SwiftTermEngine(view: view)
         }
         engine.engineSetScrollback(TerminalDefaults.scrollback())

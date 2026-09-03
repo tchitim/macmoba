@@ -101,6 +101,9 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         engine.engineSetScrollback(TerminalDefaults.scrollback())
         if let termView { TerminalRendering.apply(to: termView) }
         super.init()
+        // So the clipboard can find this tab from the view again; see
+        // SwiftTermEngine.owner.
+        (engine as? SwiftTermEngine)?.owner = self
         wireEngine()
         applyFont(size: app.terminalFontSize)
         engine.engineApplyTheme(app.theme)

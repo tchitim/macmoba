@@ -95,12 +95,23 @@ enum TerminalClipboard {
         // A pasted screenshot in an SSH pane goes to the remote as a file, and
         // its path lands in the prompt — how you hand an image to an agent
         // running over there (cmux workflow, SSH edition).
+        // Through the engine wrapper, which is the view's delegate now. The
+        // direct `as? TerminalTab` this replaces had been quietly failing for
+        // every pane since the wrapper was introduced.
         if allowImageUpload,
-           let tab = view.terminalDelegate as? TerminalTab,
+           let tab = (view.terminalDelegate as? SwiftTermEngine)?.owner,
            tab.config.sessionKind.authenticatesOverSSH,
            let png = clipboardImagePNG() {
             tab.pasteImageToRemote(png)
             return
+        }
+        // An image is on the clipboard, this path was allowed to upload it, and
+        // no pane could be identified — which is what the broken cast looked
+        // like from the outside: nothing happened, no error, for months. Say it
+        // rather than fall through in silence.
+        if allowImageUpload, clipboardImagePNG() != nil,
+           (view.terminalDelegate as? SwiftTermEngine)?.owner == nil {
+            NSLog("MacMoba: image paste ignored — no owning pane for this view")
         }
         guard let text = clipboardText(), !text.isEmpty else { return }
         let summary = PasteGuard.inspect(text)
