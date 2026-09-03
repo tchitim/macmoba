@@ -4,6 +4,27 @@ Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.
 
+## 2.28
+
+**Fix: a right-click in a terminal could upload a screenshot to the remote
+machine.** Right-click and middle-click paste, and pasting an image into an SSH
+session uploads it as a file and types its path — so a screenshot still sitting
+on the clipboard from earlier, plus one right-click where a menu was expected,
+quietly wrote a file on the far machine. Mouse paste now handles text only;
+images still upload from ⌘V and the Paste menu item, where they were asked for.
+
+**Pasted images on the remote are now kept for seven days.** Nothing had ever
+removed them, so `~/.macmoba` on a machine you paste into grew without limit.
+Only files this app wrote are touched, and only past the seventh day.
+
+修正:在終端機裡按右鍵有可能把一張截圖上傳到遠端主機。右鍵和中鍵是貼上,而在 SSH
+分頁貼圖片會把它上傳成檔案並把路徑打進提示字元——所以只要剪貼簿裡還留著稍早的截圖,
+在你以為是開選單的地方按一下右鍵,就會在遠端悄悄寫下一個檔案。現在滑鼠貼上只處理文字;
+圖片仍然可以用 ⌘V 或選單的 Paste 上傳,那才是你真的要求它做的時候。
+
+貼到遠端的圖片現在保留七天。先前沒有任何清理,所以你貼進去的那台機器上的 `~/.macmoba`
+會無限成長。只會刪掉這個 App 自己寫的檔案,而且只刪超過七天的。
+
 ## 2.27
 
 **Fix: copying on the Mac and pasting into a Windows RDP session did nothing.**
