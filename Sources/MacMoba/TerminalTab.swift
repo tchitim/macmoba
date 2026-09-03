@@ -457,7 +457,18 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
                     hostKeys: app?.hostKeyVerification)
                 await MainActor.run {
                     self.connection?.write(Data(path.utf8))
-                    self.postStatus("Image uploaded: \(path)")
+                    // Says that a FILE was made, and that it will go away.
+                    //
+                    // The old wording named the path and stopped there, which
+                    // reads as "your paste worked" rather than "a file now
+                    // exists on that machine". The person this was written for
+                    // pasted screenshots for weeks, thought they had never
+                    // used the feature, and found the directory by accident:
+                    // they were pasting an image expecting an attachment and
+                    // getting a path, with no hint anything had been written.
+                    let name = (path as NSString).lastPathComponent
+                    self.postStatus("Screenshot uploaded as \(name) — "
+                                    + "kept on the remote for 7 days")
                 }
             } catch {
                 await MainActor.run {
