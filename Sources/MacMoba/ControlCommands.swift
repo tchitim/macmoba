@@ -50,6 +50,9 @@ extension AppState {
                     "kind": tab.isLocal ? "local" : tab.kind.rawValue,
                     "state": stateName(tab),
                     "attention": tab.attentionCount > 0,
+                    // Omitted for tabs with no terminal, rather than reported
+                    // as a guess.
+                    "engine": tab.engineName ?? "",
                 ]
             }
             return .success(json: jsonString(items))

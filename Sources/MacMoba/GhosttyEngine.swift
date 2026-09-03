@@ -103,6 +103,8 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
 
     var engineView: NSView { hosting }
 
+    var engineName: String { "libghostty" }
+
     func engineFeed(_ bytes: ArraySlice<UInt8>) { session.receive(Data(bytes)) }
 
     func engineSendText(_ text: String) { _ = surfaceState.surface?.sendText(text) }

@@ -894,6 +894,22 @@ final class SessionTab: ObservableObject, Identifiable {
         return model
     }
 
+    /// Which terminal engine this tab's panes are drawn with, or nil for a
+    /// tab that has no terminal in it. "mixed" is possible: the engine is
+    /// chosen when a pane is built, so panes opened either side of a change
+    /// to the setting genuinely differ.
+    var engineName: String? {
+        let names = Set(Self.contents(root).compactMap { content -> String? in
+            switch content {
+            case .terminal(let pane): return pane.engine.engineName
+            case .localShell(let pane): return pane.engine.engineName
+            default: return nil
+            }
+        })
+        if names.isEmpty { return nil }
+        return names.count == 1 ? names.first : "mixed"
+    }
+
     /// The status dot for a file-browser tab mirrors its one connection.
     private var fileBrowserState: TerminalTab.State {
         guard let model = sftpModels[config.id] else { return .connecting }

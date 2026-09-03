@@ -56,6 +56,14 @@ protocol TerminalEngineView: AnyObject {
     /// The AppKit view, for the pane container to place and re-parent.
     var engineView: NSView { get }
 
+    /// Which library is drawing this pane, for `macmoba list-tabs`.
+    ///
+    /// Added because there was no way to answer "am I on libghostty?" from
+    /// outside — the question that prompted it came from the person who had
+    /// just installed the build. A setting whose effect is invisible is a
+    /// setting nobody can trust.
+    var engineName: String { get }
+
     /// Bytes arriving from the far end.
     func engineFeed(_ bytes: ArraySlice<UInt8>)
 
@@ -183,6 +191,8 @@ final class SwiftTermEngine: NSObject, TerminalEngineView {
     }
 
     var engineView: NSView { view }
+
+    var engineName: String { "swiftterm" }
 
     func engineFeed(_ bytes: ArraySlice<UInt8>) { view.feed(byteArray: bytes) }
 

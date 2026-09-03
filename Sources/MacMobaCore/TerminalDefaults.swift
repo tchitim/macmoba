@@ -79,7 +79,22 @@ public extension TerminalDefaults {
 public extension TerminalDefaults {
     static let engineKey = "terminalEngine"
 
-    static func usesGhosttyEngine(from defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: engineKey) as? Bool ?? false
+    /// Info.plist key a build may carry to change the default. Written by
+    /// `make-app.sh` only when GHOSTTY_DEFAULT=1, so a published release cannot
+    /// pick it up by accident.
+    static let engineBundleKey = "MacMobaDefaultEngine"
+
+    /// A setting the user made wins. Failing that, what this build was made to
+    /// default to. Failing that, SwiftTerm.
+    ///
+    /// The build-level default exists so local test builds can run libghostty
+    /// while the releases stay on SwiftTerm, without the two differing in
+    /// source — a branch that has to be remembered to change back is a branch
+    /// that eventually is not.
+    static func usesGhosttyEngine(from defaults: UserDefaults = .standard,
+                                  bundle: Bundle = .main) -> Bool {
+        if let chosen = defaults.object(forKey: engineKey) as? Bool { return chosen }
+        let declared = bundle.object(forInfoDictionaryKey: engineBundleKey) as? String
+        return declared?.lowercased() == "ghostty"
     }
 }
