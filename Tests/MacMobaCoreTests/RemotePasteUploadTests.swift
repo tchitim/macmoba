@@ -64,3 +64,38 @@ final class RemotePasteUploadTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: remote)), payload)
     }
 }
+
+// MARK: - Retention, against the real server
+
+extension RemotePasteUploadTests {
+    /// The sweep really deletes, and really spares everything else.
+    ///
+    /// The rule itself is covered by RemotePasteRetentionTests; this is the
+    /// other half — that the delete reaches the far side at all, which a pure
+    /// test cannot show.
+    func testSweepRemovesOnlyExpiredPastes() async throws {
+        try XCTSkipUnless(serverUp(), "needs: node TestSupport/ssh-server.js")
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mm-retention-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let now = Date()
+        let stale = "paste-\(Int(now.timeIntervalSince1970 - 8 * 86_400)).png"
+        let fresh = "paste-\(Int(now.timeIntervalSince1970 - 1 * 86_400)).png"
+        let theirs = "important.png"
+        for name in [stale, fresh, theirs] {
+            try Data("x".utf8).write(to: dir.appendingPathComponent(name))
+        }
+
+        let client = try await SFTPClient.connect(config: session(), via: [], hostKeys: nil)
+        defer { client.close() }
+        await RemotePasteUpload.sweepExpired(in: dir.path, using: client, now: now)
+
+        let left = Set(try FileManager.default.contentsOfDirectory(atPath: dir.path))
+        XCTAssertFalse(left.contains(stale), "the eight-day-old paste should be gone")
+        XCTAssertTrue(left.contains(fresh), "a one-day-old paste must survive")
+        XCTAssertTrue(left.contains(theirs), "a file that is not ours must survive")
+    }
+}
