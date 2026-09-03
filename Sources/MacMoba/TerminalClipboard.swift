@@ -80,11 +80,23 @@ enum TerminalClipboard {
     /// Paste, asking first when the clipboard would run more than one command.
     /// The alert is a window sheet rather than `runModal()`: a global modal
     /// steals the keyboard from the terminal you are typing into.
-    static func requestPaste(into view: TerminalView) {
+    /// - Parameter allowImageUpload: whether a screenshot on the clipboard may
+    ///   be uploaded to the remote.
+    ///
+    ///   False for the mouse shortcuts. Right-click and middle-click paste are
+    ///   the xterm idiom, and that idiom is about TEXT — but the image branch
+    ///   below writes a file on someone else's machine and types its path, with
+    ///   no confirmation, which is not what a stray right-click should mean.
+    ///   Most people expect a right-click to open a menu; this one uploaded a
+    ///   screenshot that had been sitting on the clipboard since some earlier
+    ///   ⇧⌘4, and left it there for good. Deliberate pastes — ⌘V and the menu
+    ///   item — still upload, because that is the feature working as intended.
+    static func requestPaste(into view: TerminalView, allowImageUpload: Bool = true) {
         // A pasted screenshot in an SSH pane goes to the remote as a file, and
         // its path lands in the prompt — how you hand an image to an agent
         // running over there (cmux workflow, SSH edition).
-        if let tab = view.terminalDelegate as? TerminalTab,
+        if allowImageUpload,
+           let tab = view.terminalDelegate as? TerminalTab,
            tab.config.sessionKind.authenticatesOverSSH,
            let png = clipboardImagePNG() {
             tab.pasteImageToRemote(png)
@@ -223,7 +235,7 @@ final class ClipboardTerminalView: TerminalView {
             super.rightMouseDown(with: event)
             return
         }
-        TerminalClipboard.requestPaste(into: self)
+        TerminalClipboard.requestPaste(into: self, allowImageUpload: false)
     }
 
     /// Middle-click paste, as in xterm. SwiftTerm ignores the middle button, so
@@ -233,7 +245,7 @@ final class ClipboardTerminalView: TerminalView {
             super.otherMouseDown(with: event)
             return
         }
-        TerminalClipboard.requestPaste(into: self)
+        TerminalClipboard.requestPaste(into: self, allowImageUpload: false)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -295,7 +307,10 @@ final class ClipboardLocalTerminalView: LocalProcessTerminalView {
             super.rightMouseDown(with: event)
             return
         }
-        TerminalClipboard.requestPaste(into: self)
+        // Same as the SSH view's: mouse paste is text. A local shell never
+        // uploads anyway, but the two subclasses are already duplicated by
+        // hand and letting them differ here is how they start drifting.
+        TerminalClipboard.requestPaste(into: self, allowImageUpload: false)
     }
 
     override func otherMouseDown(with event: NSEvent) {
@@ -303,7 +318,7 @@ final class ClipboardLocalTerminalView: LocalProcessTerminalView {
             super.otherMouseDown(with: event)
             return
         }
-        TerminalClipboard.requestPaste(into: self)
+        TerminalClipboard.requestPaste(into: self, allowImageUpload: false)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
