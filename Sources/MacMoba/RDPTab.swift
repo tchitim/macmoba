@@ -231,24 +231,42 @@ final class RDPTab: NSObject, ObservableObject, Identifiable {
         let client = OpaquePointer(rdp)
         // Files first: a Finder copy also puts the file's name on as text, and
         // sending the name instead of the file is never what was meant.
-        if let paths = RDPFileClipboard.localFilePaths(from: board) {
-            paths.withCString { macmoba_rdp_offer_files(client, $0) }
-            return
-        }
-        macmoba_rdp_offer_files(client, nil)
-        let text = board.string(forType: .string)
-        // Only look for a picture when there is no text: a copied selection
-        // often carries both, and the text is what was meant.
-        let dib = text == nil ? RDPClipboardImage.dib(from: board) : nil
+        let paths = RDPFileClipboard.localFilePaths(from: board)
+        // Only look for a picture when there is neither: a copied selection
+        // often carries text as well, and the text is what was meant.
+        let text = paths == nil ? board.string(forType: .string) : nil
+        let dib = (paths == nil && text == nil) ? RDPClipboardImage.dib(from: board) : nil
 
-        if let dib {
-            dib.withUnsafeBytes { buffer in
-                let base = buffer.bindMemory(to: UInt8.self).baseAddress
-                macmoba_rdp_offer_clipboard(client, text, base, UInt32(buffer.count))
+        // ONE announcement, not one per kind.
+        //
+        // This used to call offer_files and then offer_clipboard, and each of
+        // those sends its own format list — so every text copy announced twice,
+        // a millisecond apart. Worse, the first of the pair was built from the
+        // PREVIOUS contents, so a fresh copy sent an empty format list first:
+        // "my clipboard is now empty", immediately followed by "it holds text".
+        // A format list is also meant to wait for its response before the next
+        // is sent. Windows was being told two contradictory things out of
+        // sequence, which is why pasting from the Mac did nothing.
+        withOptionalCString(paths) { pathsPtr in
+            withOptionalCString(text) { textPtr in
+                if let dib {
+                    dib.withUnsafeBytes { buffer in
+                        let base = buffer.bindMemory(to: UInt8.self).baseAddress
+                        macmoba_rdp_offer_all(client, pathsPtr, textPtr,
+                                              base, UInt32(buffer.count))
+                    }
+                } else {
+                    macmoba_rdp_offer_all(client, pathsPtr, textPtr, nil, 0)
+                }
             }
-        } else if let text {
-            text.withCString { macmoba_rdp_offer_clipboard(client, $0, nil, 0) }
         }
+    }
+
+    /// Runs `body` with a C string for `value`, or NULL when it is nil.
+    private func withOptionalCString<R>(_ value: String?,
+                                        _ body: (UnsafePointer<CChar>?) -> R) -> R {
+        guard let value else { return body(nil) }
+        return value.withCString { body($0) }
     }
 
     nonisolated fileprivate func receiveRemoteFileList(_ files: [RDPRemoteFile]) {
