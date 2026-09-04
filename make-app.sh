@@ -33,8 +33,7 @@ swift build -c release
 
 APP=MacMoba.app
 BIN=.build/release/MacMoba
-<<<<<<< HEAD
-VERSION=3.03
+VERSION=3.04
 
 # Which terminal engine a build defaults to.
 #
@@ -51,9 +50,6 @@ if [[ "${GHOSTTY_DEFAULT:-0}" == "1" ]]; then
   ENGINE_PLIST_ENTRY=$'\n    <key>MacMobaDefaultEngine</key>\n    <string>ghostty</string>'
   echo "Default terminal engine: libghostty (GHOSTTY_DEFAULT=1)"
 fi
-=======
-VERSION=2.29
->>>>>>> main
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
