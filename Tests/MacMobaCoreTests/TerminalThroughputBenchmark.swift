@@ -47,6 +47,28 @@ final class TerminalThroughputBenchmark: XCTestCase {
         }
     }
 
+    /// The same bytes through the terminal core alone, with no view attached.
+    ///
+    /// This exists so the SwiftTerm figure can be compared honestly against
+    /// libghostty-vt, which has no view to go through: measuring
+    /// TerminalView.feed against ghostty_terminal_vt_write would be charging
+    /// one side for dirty-range tracking the other never does.
+    func testFeedThroughputCoreOnly() throws {
+        try XCTSkipUnless(enabled, "set MACMOBA_BENCH=1 to measure")
+        for (name, payload) in Self.payloads {
+            let view = TerminalView(frame: CGRect(x: 0, y: 0, width: 1200, height: 800))
+            let terminal = view.getTerminal()
+            terminal.resize(cols: 120, rows: 40)
+            let bytes = [UInt8](payload)
+            let started = Date()
+            terminal.feed(byteArray: bytes)
+            let seconds = Date().timeIntervalSince(started)
+            let mb = Double(bytes.count) / 1_048_576
+            print(String(format: "core  %-16@  %6.1f MB in %5.2fs  =  %6.1f MB/s",
+                         name as NSString, mb, seconds, mb / seconds))
+        }
+    }
+
     /// Drawing a screenful, which is the cost libghostty's GPU renderer would
     /// actually be replacing.
     ///

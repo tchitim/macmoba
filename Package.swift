@@ -24,6 +24,14 @@ let package = Package(
         // patch from outside. Branched from 1.15.0; Vendor/SwiftTerm/README.md
         // records what was changed and how to re-verify and re-sync it.
         .package(path: "Vendor/SwiftTerm"),
+        // Vendored, not a version dependency, for one patch: GhosttyTerminal
+        // reads its resources through SwiftPM's generated `Bundle.module`,
+        // which calls fatalError rather than returning nil and looks in
+        // neither place a packaged .app can put a resource bundle. That
+        // crashes on every Mac except the one that built the binary — see
+        // Vendor/libghostty-spm/README.md. The libghostty binary itself is
+        // still the upstream XCFramework release, fetched by SwiftPM.
+        .package(path: "Vendor/libghostty-spm"),
         // Pinned by revision, not version: RoyalVNC's vendored C targets carry
         // -Wno-* warning suppressions, which SwiftPM classes as "unsafe flags"
         // and refuses in a versioned dependency. The flags are harmless and a
@@ -89,6 +97,18 @@ let package = Package(
         // The control-socket CLI (`macmoba list-tabs` …). Deliberately free of
         // NIO/Core: a plain blocking Unix-socket client, so it builds fast and
         // ships as a tiny helper binary inside the app bundle.
+        // Test-only seeder, see scripts/check-ghostty-ssh.sh.
+        .executableTarget(
+            name: "ghostty-ssh-seed",
+            dependencies: ["MacMobaCore"],
+            path: "Sources/ghostty-ssh-seed"
+        ),
+        // Temporary probe, see scripts/check-ghostty-resources.sh.
+        .executableTarget(
+            name: "ghostty-resource-probe",
+            dependencies: [.product(name: "GhosttyTerminal", package: "libghostty-spm")],
+            path: "Sources/ghostty-resource-probe"
+        ),
         // Measures the Metal renderer, which the throughput benchmark cannot
         // reach because cacheDisplay always takes the CoreGraphics path.
         .executableTarget(
@@ -107,6 +127,7 @@ let package = Package(
                 "MacMobaCore",
                 "CMacMobaRDP",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
+                .product(name: "GhosttyTerminal", package: "libghostty-spm"),
                 .product(name: "RoyalVNCKit", package: "royalvnc"),
             ]
         ),
