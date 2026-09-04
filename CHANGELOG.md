@@ -4,6 +4,37 @@ Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.
 
+## 2.30
+
+**An alternative terminal engine, off by default.** Terminals can now be drawn
+by libghostty — the engine behind Ghostty — instead of SwiftTerm. It parses
+faster, though only where nothing slower is in the way: measurably on a local
+shell, and not at all over a typical SSH link, where the network is the limit
+long before the terminal is. Nothing changes unless you ask for it:
+
+    defaults write dev.macmoba.MacMoba terminalEngine -bool true
+
+New tabs use it; existing ones keep the engine they were built with, and
+`macmoba list-tabs` reports which is which. Two things are missing on it so
+far — Select All, and the GPU-rendering toggle, which it does not need because
+it always draws on the GPU.
+
+Everything else in this release is the groundwork: the app now talks to its
+terminal through one seam instead of to SwiftTerm directly, which is what let
+a second engine exist at all.
+
+多了一個可選的終端機引擎,預設不啟用。終端機現在可以改由 libghostty(Ghostty 背後的引擎)繪製,
+而不是 SwiftTerm。它的解析速度較快,但只有在沒有更慢的東西擋路時才看得出來:本機 shell 上量得到,
+一般 SSH 連線上完全沒有差別——網路遠在終端機之前就成為瓶頸。不主動開啟的話,什麼都不會變:
+
+    defaults write dev.macmoba.MacMoba terminalEngine -bool true
+
+新開的分頁會使用它,既有分頁維持原本的引擎;`macmoba list-tabs` 會顯示各分頁用的是哪一個。
+目前它還少兩樣:全選,以及 GPU 算繪開關——後者它不需要,因為它一律使用 GPU。
+
+這一版其餘的部分都是為此鋪路:App 現在透過單一接縫和終端機溝通,而不是直接對著 SwiftTerm,
+那正是第二個引擎得以存在的原因。
+
 ## 2.29
 
 **Large SFTP downloads are much faster, and no longer look frozen.** A download
