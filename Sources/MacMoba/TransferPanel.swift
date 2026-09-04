@@ -208,6 +208,62 @@ final class TransferController: ObservableObject {
     @Published var currentName = ""
     @Published var completed = 0
     @Published var total = 0
+    /// Bytes of the file being copied right now, and its size.
+    ///
+    /// The panel used to show only "name (1 of 1)" beside an indeterminate
+    /// spinner, so a single large file — the case this panel exists for — gave
+    /// no sign of progress at all for as long as it took. Every transfer call
+    /// here passed `progress: nil`, so the figures were never even asked for.
+    @Published var fileDone: UInt64 = 0
+    @Published var fileTotal: UInt64?
+
+    /// How far through the current file, or nil when its size is unknown.
+    var fileFraction: Double? {
+        guard let fileTotal, fileTotal > 0 else { return nil }
+        return min(1, Double(fileDone) / Double(fileTotal))
+    }
+
+    /// Progress fires per chunk; throttle the republishing.
+    private var lastProgressPublish = Date.distantPast
+
+    func reportProgress(done: UInt64, total: UInt64?) {
+        let now = Date()
+        guard now.timeIntervalSince(lastProgressPublish) > 0.05 else { return }
+        lastProgressPublish = now
+        fileDone = done
+        if let total { fileTotal = total }
+    }
+
+    /// What the status bar says while running.
+    ///
+    /// The file count stays — it is the only thing that says how much of a
+    /// multi-file job is left — with the percentage and bytes for the file
+    /// actually moving, since that is where the time goes.
+    var progressLine: String {
+        guard !currentName.isEmpty else { return "Working…" }
+        var line = currentName
+        if total > 1 { line += " (\(completed + 1) of \(total))" }
+        if let fraction = fileFraction, let fileTotal {
+            line += " · \(Int(fraction * 100))% of \(Self.bytes(fileTotal))"
+        } else if fileDone > 0 {
+            line += " · \(Self.bytes(fileDone))"
+        }
+        return line
+    }
+
+    static func bytes(_ count: UInt64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(count))
+    }
+
+    /// Starting a new file, so the byte counters restart with it.
+    func beginFile(named name: String, size: UInt64?) {
+        currentName = name
+        fileDone = 0
+        fileTotal = size
+        lastProgressPublish = .distantPast
+    }
     @Published var prompt: Prompt?
     /// Set while a sync is waiting for the user to confirm the plan.
     @Published var syncConfirmation: SyncConfirmation?
@@ -450,24 +506,51 @@ final class TransferController: ObservableObject {
         // One side is always this Mac, so every transfer is "read from the
         // remote into a local path" or "write a local path to the remote" —
         // there is no server-to-server case to handle.
+        // A folder reports per-file, so its bytes are for whichever file is
+        // moving; a single file reports its own. Either way the panel finally
+        // has something to draw.
+        let onFile: @Sendable (String, UInt64, UInt64?) -> Void = { [weak self] name, done, total in
+            Task { @MainActor in
+                guard let self else { return }
+                if name != self.currentName { self.beginFile(named: name, size: total) }
+                self.reportProgress(done: done, total: total)
+            }
+        }
+        let onBytes: @Sendable (UInt64, UInt64?) -> Void = { [weak self] done, total in
+            Task { @MainActor in self?.reportProgress(done: done, total: total) }
+        }
+
         switch direction {
         case .upload:
             let local = URL(fileURLWithPath: job.sourcePath)
             if job.isDirectory {
+                await MainActor.run { self.beginFile(named: job.name, size: nil) }
                 try await destination.uploadDirectory(localURL: local,
-                                                      to: job.destinationPath, progress: nil)
+                                                      to: job.destinationPath, progress: onFile)
             } else {
+                // The job carries the size when the plan knew it; a file
+                // picked some other way is measured here. NOT localTreeSize —
+                // that walks a directory and returns nil for a plain file,
+                // which would have left every single-file upload without a
+                // bar, the exact case being fixed.
+                let size = job.size > 0
+                    ? job.size
+                    : (try? local.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+                        .flatMap { $0.map(UInt64.init) }
+                await MainActor.run { self.beginFile(named: job.name, size: size) }
                 try await destination.upload(localURL: local,
-                                             to: job.destinationPath, progress: nil)
+                                             to: job.destinationPath, progress: onBytes)
             }
         case .download:
             let local = URL(fileURLWithPath: job.destinationPath)
             if job.isDirectory {
+                await MainActor.run { self.beginFile(named: job.name, size: nil) }
                 try await source.downloadDirectory(remotePath: job.sourcePath,
-                                                   to: local, progress: nil)
+                                                   to: local, progress: onFile)
             } else {
+                await MainActor.run { self.beginFile(named: job.name, size: job.size) }
                 try await source.download(remotePath: job.sourcePath,
-                                          to: local, progress: nil)
+                                          to: local, progress: onBytes)
             }
         }
     }
@@ -606,11 +689,19 @@ struct TransferPanelView: View {
     private var statusBar: some View {
         HStack(spacing: 10) {
             if controller.running {
-                ProgressView().controlSize(.small)
-                Text(controller.currentName.isEmpty
-                     ? "Working…"
-                     : "\(controller.currentName) (\(controller.completed + 1) of \(controller.total))")
+                // Determinate whenever the size is known, which is now the
+                // usual case: a spinner beside "(1 of 1)" told you a large
+                // download had started and nothing else for as long as it ran.
+                if let fraction = controller.fileFraction {
+                    ProgressView(value: fraction)
+                        .controlSize(.small)
+                        .frame(width: 90)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+                Text(controller.progressLine)
                     .lineLimit(1)
+                    .monospacedDigit()
                 Button("Cancel") { controller.cancel() }
                     .controlSize(.small)
             } else if let summary = controller.summary {

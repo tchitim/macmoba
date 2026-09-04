@@ -103,3 +103,61 @@ final class TransferPercentageTests: XCTestCase {
         return min(1, Double(done) / Double(total))
     }
 }
+
+/// The transfer panel's status line: what it says while a copy runs.
+///
+/// Mirrors TransferController.progressLine, which lives in the app target.
+/// The rules are worth pinning because the panel's whole failure was saying
+/// too little — "(1 of 1)" beside a spinner, for as long as a large file took.
+final class TransferPanelProgressLineTests: XCTestCase {
+    private func line(name: String, completed: Int, total: Int,
+                      done: UInt64, fileTotal: UInt64?) -> String {
+        guard !name.isEmpty else { return "Working…" }
+        var line = name
+        if total > 1 { line += " (\(completed + 1) of \(total))" }
+        let fraction: Double? = {
+            guard let fileTotal, fileTotal > 0 else { return nil }
+            return min(1, Double(done) / Double(fileTotal))
+        }()
+        if let fraction, let fileTotal {
+            line += " · \(Int(fraction * 100))% of \(bytes(fileTotal))"
+        } else if done > 0 {
+            line += " · \(bytes(done))"
+        }
+        return line
+    }
+
+    private func bytes(_ count: UInt64) -> String {
+        let f = ByteCountFormatter(); f.countStyle = .file
+        return f.string(fromByteCount: Int64(count))
+    }
+
+    /// The reported case: one file, so no "(1 of 1)" noise — just how far in.
+    func testSingleFileShowsPercentNotACount() {
+        let text = line(name: "icl_gitrunner.tar.gz", completed: 0, total: 1,
+                        done: 5_000_000, fileTotal: 10_000_000)
+        XCTAssertTrue(text.contains("50%"), text)
+        XCTAssertFalse(text.contains("1 of 1"), "a count of one says nothing: \(text)")
+    }
+
+    /// A real queue still says where it is in the queue.
+    func testManyFilesKeepTheCount() {
+        let text = line(name: "b.txt", completed: 2, total: 9,
+                        done: 1, fileTotal: 4)
+        XCTAssertTrue(text.contains("(3 of 9)"), text)
+        XCTAssertTrue(text.contains("25%"), text)
+    }
+
+    /// An unknown size falls back to bytes moved rather than showing nothing.
+    func testUnknownSizeStillReportsBytes() {
+        let text = line(name: "tree", completed: 0, total: 1,
+                        done: 2048, fileTotal: nil)
+        XCTAssertFalse(text.contains("%"), text)
+        XCTAssertTrue(text.contains("2"), text)
+    }
+
+    func testNothingStartedYet() {
+        XCTAssertEqual(line(name: "", completed: 0, total: 0, done: 0, fileTotal: nil),
+                       "Working…")
+    }
+}
