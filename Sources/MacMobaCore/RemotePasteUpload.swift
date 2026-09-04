@@ -18,6 +18,35 @@ import Foundation
 /// Split out from the upload so the rule can be tested without a server, and
 /// because deciding what to delete on someone else's machine deserves to be
 /// readable on its own.
+/// A session's own folder under `~/.macmoba`, so two sessions on the SAME
+/// machine do not share a pot.
+///
+/// They otherwise do: connecting to one host from two tabs means one home
+/// directory and one `~/.macmoba`, so a screenshot pasted in one session sits
+/// among screenshots from every other — which is how someone working in one
+/// session found files they had pasted in another and could not tell where any
+/// of them came from.
+public enum RemotePasteFolder {
+    /// Turns a session name into one path segment.
+    ///
+    /// Deliberately strict rather than clever. The name comes from the vault
+    /// and is used to build a path on a remote machine, so anything that is
+    /// not a letter, digit, dash, underscore or dot becomes a dash — that
+    /// rules out separators, spaces, quoting problems and `..` in one pass
+    /// instead of enumerating what to forbid.
+    public static func slug(for name: String) -> String {
+        let kept = name.map { ch -> Character in
+            ch.isLetter || ch.isNumber || ch == "-" || ch == "_" || ch == "." ? ch : "-"
+        }
+        var slug = String(kept)
+        while slug.contains("--") { slug = slug.replacingOccurrences(of: "--", with: "-") }
+        slug = slug.trimmingCharacters(in: CharacterSet(charactersIn: "-."))
+        // A name that survives none of that would otherwise produce an empty
+        // segment and a path ending in a slash.
+        return slug.isEmpty ? "session" : String(slug.prefix(64))
+    }
+}
+
 public enum RemotePasteRetention {
     public static let defaultMaxAge: TimeInterval = 7 * 24 * 60 * 60
 
@@ -66,10 +95,17 @@ public enum RemotePasteUpload {
         if let directory {
             dir = directory
         } else {
-            dir = try await client.realpath(".") + "/.macmoba"
+            // Per session, so two tabs onto the same host keep their pastes
+            // apart; see RemotePasteFolder.
+            dir = try await client.realpath(".") + "/.macmoba/"
+                + RemotePasteFolder.slug(for: config.name)
         }
         // Already existing is fine; a real failure resurfaces at upload time
-        // with a path in hand, which beats failing on EEXIST here.
+        // with a path in hand, which beats failing on EEXIST here. The parent
+        // is created first because mkdir does not make intermediates.
+        if let slash = dir.lastIndex(of: "/"), directory == nil {
+            try? await client.mkdir(String(dir[dir.startIndex..<slash]))
+        }
         try? await client.mkdir(dir)
 
         let remotePath = dir + "/" + fileName
@@ -84,7 +120,12 @@ public enum RemotePasteUpload {
         // succeeded: losing an image because tidying failed would be a poor
         // trade, and a sweep that runs first could delete the only copy of
         // something if the upload then fails.
-        await sweepExpired(in: dir, using: client)
+        await sweepExpired(in: dir, using: client, keeping: fileName)
+        // Also the folder above, where every paste landed before sessions had
+        // their own — otherwise those never expire.
+        if let slash = dir.lastIndex(of: "/"), directory == nil {
+            await sweepExpired(in: String(dir[dir.startIndex..<slash]), using: client)
+        }
         return remotePath
     }
 
@@ -93,12 +134,21 @@ public enum RemotePasteUpload {
     /// Every failure is swallowed: this is housekeeping on someone else's
     /// machine, and no part of it is worth failing a paste over. A directory
     /// that cannot be listed, or a file that will not delete, simply stays.
+    /// - Parameter keeping: a name the sweep must never delete.
+    ///
+    ///   The file just uploaded. Its stamp is always "now" in practice, so it
+    ///   could not expire — but the sweep runs immediately after the upload,
+    ///   and "this can delete the thing it was called to protect" is not a
+    ///   property to leave resting on the caller's choice of filename. A test
+    ///   using `paste-1.png` deleted its own upload and found this.
     static func sweepExpired(in directory: String, using client: SFTPClient,
                              now: Date = Date(),
-                             maxAge: TimeInterval = RemotePasteRetention.defaultMaxAge) async {
+                             maxAge: TimeInterval = RemotePasteRetention.defaultMaxAge,
+                             keeping: String? = nil) async {
         guard let items = try? await client.list(directory) else { return }
         let doomed = RemotePasteRetention.expired(names: items.map(\.name),
                                                   now: now, maxAge: maxAge)
+            .filter { $0 != keeping }
         for name in doomed {
             try? await client.removeFile(directory + "/" + name)
         }

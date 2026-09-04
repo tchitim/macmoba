@@ -402,6 +402,13 @@ final class SFTPBrowserModel: ObservableObject {
             guard panel.runModal() == .OK, let destDir = panel.url else { return }
             let dest = destDir.appendingPathComponent(item.name)
             startTransfer(.download, name: item.name, total: nil) { transfer in
+                // Size the tree first, so the bar means something. Best
+                // effort: a scan that fails leaves the transfer indeterminate,
+                // which is how it always behaved, rather than failing a copy
+                // over a progress figure.
+                if let total = try? await client.totalSize(ofDirectory: remote) {
+                    await MainActor.run { transfer.setTotal(total) }
+                }
                 try await client.downloadDirectory(remotePath: remote, to: dest) { file, done, _ in
                     Task { @MainActor in transfer.updateTree(file: file, fileDone: done) }
                 }
@@ -416,6 +423,26 @@ final class SFTPBrowserModel: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Bytes of a local folder, for sizing an upload before it starts.
+    ///
+    /// Symlinks are skipped to match what the upload sends, and any file that
+    /// cannot be measured is simply left out — a total that is slightly low
+    /// makes the bar finish early, which is better than refusing to show one.
+    static func localTreeSize(_ url: URL) -> UInt64? {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey]
+        guard let walker = FileManager.default.enumerator(
+            at: url, includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]) else { return nil }
+        var total: UInt64 = 0
+        for case let file as URL in walker {
+            guard let values = try? file.resourceValues(forKeys: Set(keys)),
+                  values.isSymbolicLink != true, values.isRegularFile == true,
+                  let size = values.fileSize else { continue }
+            total += UInt64(size)
+        }
+        return total > 0 ? total : nil
     }
 
     // MARK: - In-panel drag (move)
@@ -434,6 +461,13 @@ final class SFTPBrowserModel: ObservableObject {
             total: item.isDirectory ? nil : item.size
         ) { transfer in
             if item.isDirectory {
+                // Size the tree first, so the bar means something. Best
+                // effort: a scan that fails leaves the transfer indeterminate,
+                // which is how it always behaved, rather than failing a copy
+                // over a progress figure.
+                if let total = try? await client.totalSize(ofDirectory: remote) {
+                    await MainActor.run { transfer.setTotal(total) }
+                }
                 try await client.downloadDirectory(remotePath: remote, to: url) { file, done, _ in
                     Task { @MainActor in transfer.updateTree(file: file, fileDone: done) }
                 }
@@ -495,6 +529,10 @@ final class SFTPBrowserModel: ObservableObject {
             let remote = join(destDir, url.lastPathComponent)
             if isDir.boolValue {
                 startTransfer(.upload, name: url.lastPathComponent, total: nil) { transfer in
+                    // Local tree, so the size costs no round trips.
+                    if let total = Self.localTreeSize(url) {
+                        await MainActor.run { transfer.setTotal(total) }
+                    }
                     try await client.uploadDirectory(localURL: url, to: remote) { file, done, _ in
                         Task { @MainActor in transfer.updateTree(file: file, fileDone: done) }
                     }
