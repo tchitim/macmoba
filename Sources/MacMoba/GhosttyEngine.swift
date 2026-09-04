@@ -60,7 +60,27 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
 
     private var menuTarget: ClipboardMenuTarget?
 
+    /// Turns the package's own input/output logging on when asked.
+    ///
+    /// Exists because "paste does nothing" cannot be diagnosed from outside:
+    /// the paste either reaches the surface or it does not, and both look
+    /// identical. The accessibility automation this session used to drive the
+    /// app stopped working, so the only way to see inside is from the machine
+    /// where it happens.
+    ///
+    ///     defaults write dev.macmoba.MacMoba ghosttyDebugLog -bool true
+    ///     log stream --predicate 'process == "MacMoba"' | grep ghostty
+    private static let debugLogOnce: Void = {
+        guard UserDefaults.standard.bool(forKey: "ghosttyDebugLog") else { return }
+        TerminalDebugLog.sink = { message in
+            NSLog("ghostty: %@", message)
+        }
+        TerminalDebugLog.enable([.input, .output, .lifecycle])
+        NSLog("ghostty: debug logging on")
+    }()
+
     override init() {
+        _ = Self.debugLogOnce
         // libghostty calls these from its own terminal IO thread, so nothing
         // here may assume the main actor — asserting it aborts the process,
         // which is how the first version of the experimental pane died.
