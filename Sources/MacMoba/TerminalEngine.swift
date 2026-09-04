@@ -149,6 +149,30 @@ protocol TerminalEngineView: AnyObject {
 }
 
 extension TerminalEngineView {
+    /// Turn off the modes a program is supposed to turn off itself.
+    ///
+    /// Mouse tracking, bracketed paste and focus reporting are switched on by
+    /// full-screen programs and switched off again when they exit — unless
+    /// they crash, are killed, or the connection drops mid-run. Nothing else
+    /// clears them: the shell does not, and this app reuses a pane's terminal
+    /// when a shell is restarted or a session reconnects, so a stuck mode
+    /// survives indefinitely. The visible result is a prompt that spits
+    /// `35;24;8M` at every twitch of the mouse, with no way out but `reset`.
+    ///
+    /// Sent as escape sequences rather than through an engine-specific call so
+    /// both parse the same thing. Explicit mode resets rather than DECSTR:
+    /// mouse tracking is not part of what a soft reset is defined to clear, so
+    /// relying on it would work by accident where it worked at all.
+    ///
+    /// Harmless on a fresh terminal, where all of these are already off.
+    func engineResetInputModes() {
+        let off = "\u{1b}[?1000l\u{1b}[?1002l\u{1b}[?1003l"   // mouse tracking
+            + "\u{1b}[?1005l\u{1b}[?1006l\u{1b}[?1015l"        // its encodings
+            + "\u{1b}[?1004l"                                     // focus reporting
+            + "\u{1b}[?2004l"                                     // bracketed paste
+        engineFeed(ArraySlice(Array(off.utf8)))
+    }
+
     /// The same content as one string, for `read-screen` and for the session
     /// log's "what was on screen before logging started" header. Derived so
     /// there is one traversal to be right rather than two to keep in step.

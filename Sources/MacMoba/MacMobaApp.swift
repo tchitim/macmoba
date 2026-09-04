@@ -131,6 +131,12 @@ struct MacMobaCommands: Commands {
             }
             .keyboardShortcut(.return, modifiers: [.command])
             .disabled(window?.selectedSessionID == nil)
+            // A way out of a stuck terminal without restarting the session.
+            // A program that leaves mouse tracking on makes the prompt spew
+            // coordinates at every mouse move, and until now the only cure was
+            // `reset`, which also clears the scrollback you were reading.
+            Button("Reset Terminal Modes") { window?.resetTerminalModes() }
+                .disabled(!(window?.selectedTab?.hasTerminalPanes ?? false))
             Button("Disconnect Tab") { window?.closeSelectedTab() }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
                 .disabled(window?.selectedTab == nil)

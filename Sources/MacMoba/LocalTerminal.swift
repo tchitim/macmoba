@@ -93,6 +93,9 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     }
 
     func start(directory: String? = nil) {
+        // A restart reuses this pane's terminal, so anything the previous
+        // shell left switched on is still on. See engineResetInputModes.
+        engine.engineResetInputModes()
         // The user's login shell, launched as a login shell so their profile runs.
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let name = (shell as NSString).lastPathComponent

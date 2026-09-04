@@ -194,6 +194,17 @@ final class WindowState: ObservableObject {
 
 
 
+    /// Clear mouse tracking and friends on every pane of this tab.
+    ///
+    /// Every pane rather than the focused one: a split where one pane is
+    /// stuck is exactly when this is reached for, and asking which one is
+    /// stuck is a question the user should not have to answer.
+    func resetTerminalModes() {
+        guard let tab = selectedTab else { return }
+        for pane in tab.panes { pane.engine.engineResetInputModes() }
+        for local in tab.localShells { local.engine.engineResetInputModes() }
+    }
+
     /// Open a tab for every session in the group (pairs well with MultiExec).
     /// Cycle to the next tab whose pane wants the user (cmux jump-to-unread).
     func jumpToAttention() {
