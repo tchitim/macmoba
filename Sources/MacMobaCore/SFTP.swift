@@ -318,6 +318,10 @@ public final class SFTPClient {
 
     /// Chunk size for READ/WRITE. 32 KB is the universally safe SFTP maximum.
     private static let chunkSize = 32 * 1024
+    /// Reads kept in flight at once, so a transfer is not one round trip per
+    /// chunk. 16 x 32 KB is half a megabyte outstanding — enough to fill a
+    /// LAN or VPN link without asking a server for an unreasonable backlog.
+    private static let readWindow = 16
 
     private init(parent: Channel, channel: Channel, handler: SFTPPacketHandler) {
         self.parentChannel = parent
@@ -374,6 +378,23 @@ public final class SFTPClient {
         let handler = self.handler
         return try await channel.eventLoop.flatSubmit {
             handler.sendRequest(type: type, body: body)
+        }.get()
+    }
+
+    /// Hand a read to the packet layer and get its future back WITHOUT
+    /// awaiting it, so several can be outstanding at once.
+    ///
+    /// `request` awaits its own answer, which is right for everything that
+    /// asks one question; a pipelined download needs the future itself.
+    private func enqueueRead(handle: Data, offset: UInt64) async throws
+        -> EventLoopFuture<SFTPResponse> {
+        var body = channel.allocator.buffer(capacity: 256)
+        body.writeSFTPData(handle)
+        body.writeInteger(offset)
+        body.writeInteger(UInt32(Self.chunkSize))
+        let handler = self.handler
+        return try await channel.eventLoop.submit {
+            handler.sendRequest(type: PacketType.read, body: body)
         }.get()
     }
 
@@ -493,26 +514,62 @@ public final class SFTPClient {
         }
         defer { try? file.close() }
 
+        // Reads are pipelined: a window of requests is in flight at once and
+        // the replies are written in order.
+        //
+        // One 32 KB read at a time meant a round trip per chunk — 6,800 of
+        // them for a 214 MB file, so even a 5 ms link spent half a minute
+        // doing nothing but waiting, and the panel looked hung. The packet
+        // layer already multiplexes on request id; only this loop was serial.
         var offset: UInt64 = 0
-        while true {
+        var reachedEnd = false
+        while !reachedEnd {
             try Task.checkCancellation()
-            let response = try await request(PacketType.read) {
-                $0.writeSFTPData(handle)
-                $0.writeInteger(offset)
-                $0.writeInteger(UInt32(Self.chunkSize))
+
+            // Issue the window, then take the answers in order. Requests go
+            // out before any is awaited, which is the whole point.
+            var futures: [(offset: UInt64, future: EventLoopFuture<SFTPResponse>)] = []
+            var planned = offset
+            for _ in 0..<Self.readWindow {
+                if let total, planned >= total { break }
+                let at = planned
+                futures.append((at, try await enqueueRead(handle: handle, offset: at)))
+                planned += UInt64(Self.chunkSize)
             }
-            switch response {
-            case .fileData(let data):
-                try file.write(contentsOf: data)
-                offset += UInt64(data.count)
-                progress?(offset, total ?? nil)
-            case .status(let code, let message):
-                if code == 1 { return } // EOF: done
-                throw SFTPError.status(code: code, message: message)
-            default:
-                throw SFTPError.protocolError("READ: expected DATA or STATUS")
+            if futures.isEmpty { break }
+
+            for (at, future) in futures {
+                let response = try await future.get()
+                switch response {
+                case .fileData(let data):
+                    // Written at the offset it was asked for, not wherever the
+                    // handle happens to sit: a short read earlier in the window
+                    // would otherwise silently shift everything after it.
+                    try file.seek(toOffset: at)
+                    try file.write(contentsOf: data)
+                    let end = at + UInt64(data.count)
+                    if end > offset { offset = end }
+                    progress?(offset, total ?? nil)
+                    // A server may answer with less than was asked for. The
+                    // gap is picked up by the next window, which restarts from
+                    // the highest byte actually written.
+                    if data.count < Self.chunkSize {
+                        reachedEnd = total.map { offset >= $0 } ?? false
+                        if !reachedEnd { planned = offset }
+                    }
+                case .status(let code, let message):
+                    guard code == 1 else {
+                        throw SFTPError.status(code: code, message: message)
+                    }
+                    reachedEnd = true      // EOF
+                default:
+                    throw SFTPError.protocolError("READ: expected DATA or STATUS")
+                }
+                if reachedEnd { break }
             }
+            if let total, offset >= total { reachedEnd = true }
         }
+        try file.truncate(atOffset: offset)
     }
 
     public func upload(

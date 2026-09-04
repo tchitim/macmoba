@@ -1,4 +1,5 @@
 import XCTest
+import os
 @testable import MacMobaCore
 
 /// Uploading pasted-image bytes to the remote, verified byte-for-byte against
@@ -135,5 +136,102 @@ extension RemotePasteUploadTests {
         XCTAssertNotEqual(a, b, "same filename in two sessions must not collide")
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: a)), Data("shot".utf8))
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: b)), Data("shot".utf8))
+    }
+}
+
+// MARK: - Pipelined download correctness
+
+/// Downloads are pipelined — several reads in flight, replies written at their
+/// own offsets. That is exactly the shape that corrupts a file if the ordering
+/// is wrong, so these compare bytes rather than sizes.
+final class SFTPDownloadIntegrityTests: XCTestCase {
+    private static let host = "127.0.0.1"
+    private static let port = 2299
+
+    private func serverUp() -> Bool {
+        let sock = socket(AF_INET, SOCK_STREAM, 0)
+        guard sock >= 0 else { return false }
+        defer { close(sock) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = UInt16(Self.port).bigEndian
+        inet_pton(AF_INET, Self.host, &addr.sin_addr)
+        return withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        } == 0
+    }
+
+    private func session() -> SessionConfig {
+        SessionConfig(name: "t", host: Self.host, port: Self.port,
+                      username: "test", authType: "password", password: "secret")
+    }
+
+    /// Sizes chosen around the 32 KB chunk and the 16-chunk window: empty, a
+    /// part chunk, an exact chunk, a part window, an exact window, and past it
+    /// — the boundaries where an off-by-one in the pipelining would show.
+    func testDownloadsAreByteExactAcrossChunkAndWindowBoundaries() async throws {
+        try XCTSkipUnless(serverUp(), "needs: node TestSupport/ssh-server.js")
+
+        let chunk = 32 * 1024
+        let window = 16 * chunk
+        let sizes = [0, 1, chunk - 1, chunk, chunk + 1,
+                     window - 1, window, window + 1, window + chunk + 777]
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mm-dl-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let client = try await SFTPClient.connect(config: session(), via: [], hostKeys: nil)
+        defer { client.close() }
+
+        for size in sizes {
+            // Pseudo-random rather than a repeating pattern: a misordered or
+            // duplicated chunk stays invisible against repeating bytes.
+            var generator = SystemRandomNumberGenerator()
+            var payload = Data(count: size)
+            payload.withUnsafeMutableBytes { raw in
+                guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                for i in 0..<size { base[i] = UInt8.random(in: 0...255, using: &generator) }
+            }
+            let source = dir.appendingPathComponent("src-\(size).bin")
+            let dest = dir.appendingPathComponent("dst-\(size).bin")
+            try payload.write(to: source)
+
+            try await client.download(remotePath: source.path, to: dest)
+
+            let got = try Data(contentsOf: dest)
+            XCTAssertEqual(got.count, size, "wrong length for \(size) bytes")
+            XCTAssertEqual(got, payload, "bytes differ for \(size) bytes")
+        }
+    }
+
+    /// Progress must never run backwards or overshoot, since it drives a bar.
+    func testProgressIsMonotonicAndBounded() async throws {
+        try XCTSkipUnless(serverUp(), "needs: node TestSupport/ssh-server.js")
+
+        let size = 20 * 32 * 1024 + 123
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mm-prog-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("src.bin")
+        try Data(repeating: 7, count: size).write(to: source)
+
+        let client = try await SFTPClient.connect(config: session(), via: [], hostKeys: nil)
+        defer { client.close() }
+
+        let seen = OSAllocatedUnfairLock(initialState: [UInt64]())
+        try await client.download(remotePath: source.path,
+                                  to: dir.appendingPathComponent("dst.bin")) { done, _ in
+            seen.withLock { $0.append(done) }
+        }
+        let values = seen.withLock { $0 }
+        XCTAssertFalse(values.isEmpty, "no progress was reported at all")
+        XCTAssertEqual(values, values.sorted(), "progress went backwards")
+        XCTAssertLessThanOrEqual(values.last ?? 0, UInt64(size))
+        XCTAssertEqual(values.last, UInt64(size), "final progress must reach the size")
     }
 }
