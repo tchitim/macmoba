@@ -57,6 +57,16 @@ final class SFTPTransfer: ObservableObject, Identifiable {
         return min(1, Double(done) / Double(total))
     }
 
+    /// Tell a transfer how big it turned out to be.
+    ///
+    /// A folder transfer starts before its size is known — finding that out
+    /// means walking the tree — so it begins indeterminate and becomes a real
+    /// bar once the scan lands.
+    func setTotal(_ newTotal: UInt64) {
+        guard newTotal > 0 else { return }
+        total = newTotal
+    }
+
     /// Single-file progress callback.
     func updateFile(done newDone: UInt64, total newTotal: UInt64?) {
         throttled {
@@ -197,7 +207,11 @@ struct SFTPTransferRow: View {
         switch transfer.status {
         case .running:
             var parts: [String] = []
-            if let total = transfer.total {
+            if let total = transfer.total, let fraction = transfer.fraction {
+                // Leading, because it is the thing being looked for. The byte
+                // counts stay: a percentage alone cannot tell a stalled 4 GB
+                // copy from a finished 4 KB one.
+                parts.append("\(Int(fraction * 100))%")
                 parts.append("\(Self.bytes(transfer.done)) of \(Self.bytes(total))")
             } else {
                 parts.append(Self.bytes(transfer.done))

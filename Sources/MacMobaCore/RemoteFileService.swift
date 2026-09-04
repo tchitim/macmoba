@@ -14,6 +14,34 @@ import Foundation
 /// actor can only satisfy requirements that its callers are able to await.
 /// Conformers are not required to be `Sendable` — the browser holds one from
 /// the main actor and never hands it to another.
+public extension RemoteFileService {
+    /// Total bytes of the files under `remotePath`, for sizing a folder
+    /// transfer before it starts.
+    ///
+    /// A folder transfer otherwise begins with no idea how big it is, so its
+    /// progress bar is indeterminate — it moves, but it never means anything.
+    /// One walk of the tree buys a real one.
+    ///
+    /// Built on `list`, so every service gets it without implementing
+    /// anything; there is nothing protocol-specific about adding up sizes.
+    /// Symlinks are skipped because the copy skips them, and counting bytes
+    /// nobody will transfer is worse than reporting no size at all.
+    func totalSize(ofDirectory remotePath: String) async throws -> UInt64 {
+        var total: UInt64 = 0
+        for item in try await list(remotePath) {
+            try Task.checkCancellation()
+            if item.isDirectory {
+                let child = remotePath.hasSuffix("/")
+                    ? remotePath + item.name : remotePath + "/" + item.name
+                total += try await totalSize(ofDirectory: child)
+            } else if !item.isSymlink {
+                total += item.size
+            }
+        }
+        return total
+    }
+}
+
 public protocol RemoteFileService: AnyObject {
     /// Resolve a path to its absolute form; "." means "where am I".
     func realpath(_ path: String) async throws -> String
