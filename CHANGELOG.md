@@ -4,6 +4,32 @@ Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.
 
+## 2.29
+
+**Large SFTP downloads are much faster, and no longer look frozen.** A download
+asked for 32 KB and waited for it before asking again — nearly seven thousand
+round trips for a 214 MB file, which on a 20 ms link is over two minutes spent
+purely waiting. Sixteen reads now travel at once.
+
+**Transfers show a percentage and a real progress bar.** The two-pane transfer
+panel showed a spinner and "(1 of 1)" for as long as a file took; folder
+transfers had a bar that moved without meaning anything, because their size was
+never measured. Both now report where they actually are.
+
+**Pasted screenshots go to a folder per session.** Two tabs onto one host shared
+`~/.macmoba`, so a screenshot pasted in one sat among screenshots from every
+other with nothing to say which was which. The upload notice also says a file
+was created and that it expires after seven days.
+
+大型 SFTP 下載快得多,也不再像卡住。原本每次只要 32 KB 並等它回來才要下一段——
+214 MB 的檔案要將近七千次往返,在 20 ms 的連線上光是等待就超過兩分鐘。現在同時有十六個讀取在傳輸中。
+
+傳輸會顯示百分比和真正的進度條。雙面板傳輸畫面原本只有一個轉圈和「(1 of 1)」,
+一直持續到檔案傳完;資料夾傳輸的進度條會動但不代表任何進度,因為從來沒有量過大小。現在兩者都會回報真實進度。
+
+貼上的截圖會依 session 分資料夾。兩個分頁連到同一台主機時共用 `~/.macmoba`,
+於是在一個 session 貼的截圖和其他 session 的混在一起,無從分辨。上傳提示現在也會說明產生了檔案,以及七天後會清除。
+
 ## 2.28
 
 **Fix: a right-click in a terminal could upload a screenshot to the remote
