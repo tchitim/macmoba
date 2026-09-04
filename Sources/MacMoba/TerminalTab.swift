@@ -200,6 +200,9 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         // A fresh attempt starts with a clean message area; connection progress
         // itself is the status bar's persistent left side, driven by `state`.
         clearStatus()
+        // A reconnect reuses this pane's terminal, and a session that dropped
+        // while a full-screen program was running left its modes on.
+        engine.engineResetInputModes()
         let grid = engine.engineGrid
         Task {
             do {
