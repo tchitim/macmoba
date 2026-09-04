@@ -56,6 +56,42 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         override func selectionContextMenu() -> NSMenu {
             menuTarget?.menu() ?? super.selectionContextMenu()
         }
+
+        /// Says which Edit-menu items apply here — which is what makes ⌘V work
+        /// at all.
+        ///
+        /// AppKit validates a menu item before letting its shortcut fire, and
+        /// asks the first responder. SwiftTerm's view answers (its
+        /// `validateUserInterfaceItem` enables Paste); the libghostty view
+        /// implements no validation whatsoever, so Edit ▸ Paste stayed
+        /// disabled and ⌘V silently did nothing. Typing was unaffected,
+        /// because key events reach the view directly without passing through
+        /// menu validation — which is exactly why "cannot paste text" arrived
+        /// with everything else working.
+        /// Implemented, not overridden: the superclass has no validation of
+        /// any kind, which is the whole problem. `surface` is internal to the
+        /// package, so Copy's enablement asks the view state instead.
+        weak var state: TerminalViewState?
+
+        @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+            switch item.action {
+            case Selector(("paste:")):
+                let has = NSPasteboard.general.canReadObject(
+                    forClasses: [NSString.self], options: nil)
+                PasteTrace.log("validate paste: -> \(has ? "enabled" : "no text on clipboard")")
+                return has
+            case Selector(("copy:")):
+                return state?.surface?.hasSelection() ?? false
+            case Selector(("selectAll:")):
+                // The action exists on the view but the surface API behind it
+                // does nothing, so an enabled item would be a lie.
+                return false
+            default:
+                // Anything else is not this view's business; leaving it
+                // enabled keeps the rest of the Edit menu behaving as it did.
+                return true
+            }
+        }
     }
 
     private var menuTarget: ClipboardMenuTarget?
@@ -106,9 +142,11 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         // the subclass gets in without reimplementing the representable.
         let target = ClipboardMenuTarget(engine: self)
         menuTarget = target
+        let viewState = surfaceState
         surfaceState.makePlatformView = {
             let view = MenuTerminalView(frame: .zero)
             view.menuTarget = target
+            view.state = viewState
             return view
         }
 
