@@ -99,3 +99,41 @@ extension RemotePasteUploadTests {
         XCTAssertTrue(left.contains(theirs), "a file that is not ours must survive")
     }
 }
+
+// MARK: - Per-session folder, against the real server
+
+extension RemotePasteUploadTests {
+    /// Two sessions on the same host land in different folders, and the file
+    /// really is inside its own.
+    ///
+    /// The slug rules are covered purely; this is the half a pure test cannot
+    /// show — that the directory gets created on the far side at all, since
+    /// mkdir does not make intermediates.
+    func testEachSessionUploadsIntoItsOwnFolder() async throws {
+        try XCTSkipUnless(serverUp(), "needs: node TestSupport/ssh-server.js")
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mm-folders-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        func upload(sessionNamed name: String) async throws -> String {
+            var config = session()
+            config.name = name
+            let dir = root.appendingPathComponent(RemotePasteFolder.slug(for: name)).path
+            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            return try await RemotePasteUpload.upload(
+                data: Data("shot".utf8), fileName: "paste-1.png",
+                config: config, directory: dir)
+        }
+
+        let a = try await upload(sessionNamed: "haoji")
+        let b = try await upload(sessionNamed: "macmoba-swift")
+
+        XCTAssertTrue(a.contains("/haoji/"), a)
+        XCTAssertTrue(b.contains("/macmoba-swift/"), b)
+        XCTAssertNotEqual(a, b, "same filename in two sessions must not collide")
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: a)), Data("shot".utf8))
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: b)), Data("shot".utf8))
+    }
+}
