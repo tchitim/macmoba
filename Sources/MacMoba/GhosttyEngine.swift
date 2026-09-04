@@ -70,17 +70,18 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
     ///
     ///     defaults write dev.macmoba.MacMoba ghosttyDebugLog -bool true
     ///     log stream --predicate 'process == "MacMoba"' | grep ghostty
-    private static let debugLogOnce: Void = {
-        guard UserDefaults.standard.bool(forKey: "ghosttyDebugLog") else { return }
-        TerminalDebugLog.sink = { message in
-            NSLog("ghostty: %@", message)
-        }
+    /// Checked on every pane, not once: the first version ran a single time
+    /// on the first pane ever built, so turning the default on and opening a
+    /// new tab did nothing — which is how it produced no output at all when
+    /// it was needed.
+    static func configureDebugLoggingIfAsked() {
+        guard PasteTrace.enabled else { return }
+        TerminalDebugLog.sink = { message in NSLog("ghostty: %@", message) }
         TerminalDebugLog.enable([.input, .output, .lifecycle])
-        NSLog("ghostty: debug logging on")
-    }()
+    }
 
     override init() {
-        _ = Self.debugLogOnce
+        Self.configureDebugLoggingIfAsked()
         // libghostty calls these from its own terminal IO thread, so nothing
         // here may assume the main actor — asserting it aborts the process,
         // which is how the first version of the experimental pane died.
@@ -198,7 +199,10 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
     /// paste receives it framed — so this is one call where SwiftTerm needs
     /// the escape sequences added by hand.
     func enginePaste(_ text: String) {
-        _ = surfaceState.paste(text: text)
+        let accepted = surfaceState.paste(text: text)
+        PasteTrace.log("enginePaste \(text.count) chars -> "
+                       + "\(accepted ? "accepted" : "REFUSED by surface")"
+                       + ", surface=\(surfaceState.surface == nil ? "nil" : "attached")")
     }
 
     func engineScroll(toRow row: Int) {

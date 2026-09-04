@@ -92,6 +92,8 @@ enum TerminalClipboard {
     ///   ⇧⌘4, and left it there for good. Deliberate pastes — ⌘V and the menu
     ///   item — still upload, because that is the feature working as intended.
     static func requestPaste(into view: TerminalView, allowImageUpload: Bool = true) {
+        PasteTrace.log("requestPaste (SwiftTerm path), images=\(allowImageUpload), "
+                       + "text=\(clipboardText()?.count ?? -1) chars")
         // A pasted screenshot in an SSH pane goes to the remote as a file, and
         // its path lands in the prompt — how you hand an image to an agent
         // running over there (cmux workflow, SSH edition).
@@ -352,6 +354,25 @@ final class ClipboardLocalTerminalView: LocalProcessTerminalView {
     }
 }
 
+/// Traces which paste path actually ran.
+///
+/// "Paste does nothing" has several possible shapes — the gesture never
+/// reaching the app, the app deciding there is nothing to paste, or the text
+/// reaching the terminal and the terminal ignoring it — and from outside they
+/// are identical. Each entry point says which one it is.
+///
+///     defaults write dev.macmoba.MacMoba ghosttyDebugLog -bool true
+enum PasteTrace {
+    static var enabled: Bool {
+        UserDefaults.standard.bool(forKey: "ghosttyDebugLog")
+    }
+
+    static func log(_ what: String) {
+        guard enabled else { return }
+        NSLog("ghostty: paste — %@", what)
+    }
+}
+
 // MARK: - Engine-based context menu
 //
 // The menu above targets SwiftTerm's view and its selectors, which only exists
@@ -376,7 +397,11 @@ final class ClipboardMenuTarget: NSObject {
     }
 
     @objc func pasteClipboard(_ sender: Any?) {
-        guard let text = TerminalClipboard.clipboardText(), !text.isEmpty else { return }
+        guard let text = TerminalClipboard.clipboardText(), !text.isEmpty else {
+            PasteTrace.log("menu Paste: clipboard held no text")
+            return
+        }
+        PasteTrace.log("menu Paste: \(text.count) chars to \(engine.engineName)")
         engine.enginePaste(text)
     }
 
