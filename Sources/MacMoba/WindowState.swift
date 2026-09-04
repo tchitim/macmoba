@@ -192,6 +192,8 @@ final class WindowState: ObservableObject {
         selectedTabID = tab.id
     }
 
+
+
     /// Open a tab for every session in the group (pairs well with MultiExec).
     /// Cycle to the next tab whose pane wants the user (cmux jump-to-unread).
     func jumpToAttention() {
@@ -300,6 +302,7 @@ final class WindowState: ObservableObject {
         selectedTab?.splitFocusedWithLocalShell(axis)
         app.saveOpenWorkspace()
     }
+
 
     func splitWithNewConnection(_ config: SessionConfig, axis: Axis) {
         _ = selectedTab?.splitFocused(axis, with: app.resolved(config))
@@ -472,7 +475,7 @@ final class WindowState: ObservableObject {
         let keystrokes = macro.keystrokes
         guard !keystrokes.isEmpty else { return }
         if let local = tab.localTerminal {
-            local.termView.send(txt: keystrokes)
+            local.engine.engineSendText(keystrokes)
             return
         }
         guard let pane = tab.focusedPane, pane.state == .connected else {
@@ -488,15 +491,15 @@ final class WindowState: ObservableObject {
             MacroBroadcastPrompt.confirm(
                 macro: macro,
                 targets: targets,
-                window: pane.termView.window,
+                window: pane.engine.engineView.window,
                 onSuppress: { [weak app] in app?.confirmBroadcastMacros = false }
             ) { [weak pane] confirmed in
                 guard confirmed, let pane else { return }
-                pane.termView.send(txt: keystrokes)
+                pane.engine.engineSendText(keystrokes)
             }
             return
         }
-        pane.termView.send(txt: keystrokes)
+        pane.engine.engineSendText(keystrokes)
     }
 }
 

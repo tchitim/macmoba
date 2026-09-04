@@ -42,19 +42,11 @@ final class TerminalSearchModel: ObservableObject {
             currentIndex = 0
             return
         }
-        let terminal = pane.termView.getTerminal()
-        let (_, rows) = terminal.getDims()
-        // Scan scrollback plus the visible screen. Scroll-invariant rows count
-        // from the very top of the scrollback, so start at the earliest row.
-        let top = terminal.getTopVisibleRow()
-        let start = min(0, top)
-        let end = top + rows
+        // Through the seam, so ⌘F works whichever library is drawing. Each
+        // line arrives with the row number that engine's scrollTo accepts.
         let needle = caseSensitive ? query : query.lowercased()
-
         var found: [Match] = []
-        for row in start..<end {
-            guard let line = terminal.getScrollInvariantLine(row: row) else { continue }
-            let text = line.translateToString(trimRight: true)
+        for (row, text) in pane.engine.engineTextLines() {
             let haystack = caseSensitive ? text : text.lowercased()
             if haystack.contains(needle) {
                 found.append(Match(row: row, line: text.trimmingCharacters(in: .whitespaces)))
@@ -85,7 +77,7 @@ final class TerminalSearchModel: ObservableObject {
 
     private func scrollToCurrent() {
         guard let pane, matches.indices.contains(currentIndex) else { return }
-        pane.termView.scrollTo(row: matches[currentIndex].row)
+        pane.engine.engineScroll(toRow: matches[currentIndex].row)
     }
 }
 

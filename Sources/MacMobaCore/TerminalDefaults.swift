@@ -66,3 +66,35 @@ public extension TerminalDefaults {
         defaults.object(forKey: metalRendererKey) as? Bool ?? true
     }
 }
+
+// Which library draws the terminals.
+//
+// Off by default while the libghostty path is still catching up: it has no
+// ⌘F, no themes, no select-all, and its screen dump is the viewport rather
+// than the whole scrollback. Each of those is named at its own call site.
+// It is measurably the faster engine — 0.149s against SwiftTerm's 0.346s for
+// 14MB of CJK into a local shell, which is engine and not renderer, since
+// SwiftTerm was on its quicker CoreGraphics path for that number — so this is
+// a migration in progress rather than an experiment kept at arm's length.
+public extension TerminalDefaults {
+    static let engineKey = "terminalEngine"
+
+    /// Info.plist key a build may carry to change the default. Written by
+    /// `make-app.sh` only when GHOSTTY_DEFAULT=1, so a published release cannot
+    /// pick it up by accident.
+    static let engineBundleKey = "MacMobaDefaultEngine"
+
+    /// A setting the user made wins. Failing that, what this build was made to
+    /// default to. Failing that, SwiftTerm.
+    ///
+    /// The build-level default exists so local test builds can run libghostty
+    /// while the releases stay on SwiftTerm, without the two differing in
+    /// source — a branch that has to be remembered to change back is a branch
+    /// that eventually is not.
+    static func usesGhosttyEngine(from defaults: UserDefaults = .standard,
+                                  bundle: Bundle = .main) -> Bool {
+        if let chosen = defaults.object(forKey: engineKey) as? Bool { return chosen }
+        let declared = bundle.object(forInfoDictionaryKey: engineBundleKey) as? String
+        return declared?.lowercased() == "ghostty"
+    }
+}

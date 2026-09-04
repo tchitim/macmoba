@@ -16,7 +16,15 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
 
     let id = UUID()
     let config: SessionConfig
-    let termView: TerminalView
+    /// SwiftTerm's view, or nil when libghostty is drawing this pane.
+    ///
+    /// Only the clipboard menu still needs it — it is reached through the
+    /// AppKit responder chain and asks the concrete type. Building one anyway
+    /// under the other engine was worse than useless: the Overview
+    /// photographed that never-drawn view and showed a blank card.
+    let termView: TerminalView?
+    /// Everything else goes through here, so the engine can be swapped.
+    let engine: any TerminalEngineView
 
     @Published var state: State = .connecting
     /// This pane rang the bell or resumed after silence while nobody was
@@ -80,15 +88,25 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         self.config = config
         self.app = app
         self.title = config.name
-        self.termView = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+        if TerminalDefaults.usesGhosttyEngine() {
+            self.termView = nil
+            self.engine = GhosttyEngine()
+        } else {
+            let view = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+            self.termView = view
+            self.engine = SwiftTermEngine(view: view)
+        }
         // SwiftTerm keeps 500 lines unless told otherwise — a few seconds of a
         // build log.
-        termView.getTerminal().changeScrollback(TerminalDefaults.scrollback())
-        TerminalRendering.apply(to: termView)
+        engine.engineSetScrollback(TerminalDefaults.scrollback())
+        if let termView { TerminalRendering.apply(to: termView) }
         super.init()
-        termView.terminalDelegate = self
+        // So the clipboard can find this tab from the view again; see
+        // SwiftTermEngine.owner.
+        (engine as? SwiftTermEngine)?.owner = self
+        wireEngine()
         applyFont(size: app.terminalFontSize)
-        app.theme.apply(to: termView)
+        engine.engineApplyTheme(app.theme)
     }
 
     /// Redial after the Mac wakes, but only when it makes sense: the pane must
@@ -182,21 +200,27 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         // A fresh attempt starts with a clean message area; connection progress
         // itself is the status bar's persistent left side, driven by `state`.
         clearStatus()
-        let term = termView.getTerminal()
+        let grid = engine.engineGrid
         Task {
             do {
                 let conn: any TerminalTransport
                 switch config.sessionKind {
-                case .telnet: conn = try await connectTelnet(cols: term.cols, rows: term.rows)
-                case .rlogin: conn = try await connectRlogin(cols: term.cols, rows: term.rows)
-                case .mosh:   conn = try await connectMosh(cols: term.cols, rows: term.rows)
+                case .telnet: conn = try await connectTelnet(cols: grid.cols, rows: grid.rows)
+                case .rlogin: conn = try await connectRlogin(cols: grid.cols, rows: grid.rows)
+                case .mosh:   conn = try await connectMosh(cols: grid.cols, rows: grid.rows)
                 case .serial: conn = try connectSerial()
-                default:      conn = try await connectSSH(cols: term.cols, rows: term.rows)
+                default:      conn = try await connectSSH(cols: grid.cols, rows: grid.rows)
                 }
                 self.connection = conn
                 self.state = .connected
-                // The view may have been laid out while we were connecting.
-                conn.resize(cols: term.cols, rows: term.rows)
+                // The view may have been laid out while we were connecting —
+                // so ask the engine again rather than resending the size read
+                // before the dial. With SwiftTerm the two are almost always
+                // equal, because its view has a real size straight away; a
+                // libghostty surface has not measured itself until it reaches
+                // a window, so the stale value left every session at 80x24.
+                let settled = self.engine.engineGrid
+                conn.resize(cols: settled.cols, rows: settled.rows)
                 self.runOnConnectCommands()
                 // Expect/send runs off the receive thread as output arrives;
                 // arm it here so the first prompt is already being watched for.
@@ -349,7 +373,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
             }
         }
         DispatchQueue.main.async { [weak self] in
-            self?.termView.feed(byteArray: ArraySlice([UInt8](data)))
+            self?.engine.engineFeed(ArraySlice([UInt8](data)))
         }
     }
 
@@ -415,19 +439,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
     /// Plain text of the whole buffer (scrollback + visible screen).
     @MainActor
     func dumpScrollback() -> String {
-        let terminal = termView.getTerminal()
-        let (_, rows) = terminal.getDims()
-        let top = terminal.getTopVisibleRow()
-        var lines: [String] = []
-        for row in min(0, top)..<(top + rows) {
-            guard let line = terminal.getScrollInvariantLine(row: row) else { continue }
-            lines.append(line.translateToString(trimRight: true))
-        }
-        // Drop the blank tail of the screen.
-        while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
-            lines.removeLast()
-        }
-        return lines.joined(separator: "\n")
+        engine.engineDumpText()
     }
 
     private func stopLogging() {
@@ -485,8 +497,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
     @MainActor
     private func applyAttention(_ trigger: AttentionDetector.Trigger) {
         let activelyWatched = NSApp.isActive
-            && termView.window?.isKeyWindow == true
-            && termView.window?.firstResponder === termView
+            && engine.engineHasKeyboardFocus
         guard !activelyWatched else { return }
         needsAttention = true
         // Away from the app entirely → a system notification carries the pane
@@ -573,23 +584,73 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
 
 // MARK: - SwiftTerm delegate
 
-extension TerminalTab: TerminalViewDelegate {
-    func send(source: TerminalView, data: ArraySlice<UInt8>) {
-        let bytes = Data(data)
-        Task { @MainActor in
-            if case .closed = state {
-                // Nothing can be typed into a dead session, so the only keys
-                // that mean anything are the two ways out of it.
-                switch DeadTerminalKey.action(for: Array(bytes)) {
-                case .reconnect: connect(); return
-                case .close: app?.closePaneHoldingDeadTerminal(self); return
-                case .ignore: return
+extension TerminalTab {
+    /// Hooks this tab up to whichever engine is drawing it.
+    ///
+    /// These were SwiftTerm delegate methods. The bodies are unchanged; only
+    /// the way they are reached is — so a second engine can deliver the same
+    /// events without this file naming its types.
+    @MainActor
+    func wireEngine() {
+        engine.engineOnInput = { [weak self] data in
+            guard let self else { return }
+            let bytes = Data(data)
+            Task { @MainActor in
+                if case .closed = self.state {
+                    // Nothing can be typed into a dead session, so the only keys
+                    // that mean anything are the two ways out of it.
+                    switch DeadTerminalKey.action(for: Array(bytes)) {
+                    case .reconnect: self.connect(); return
+                    case .close: self.app?.closePaneHoldingDeadTerminal(self); return
+                    case .ignore: return
+                    }
+                }
+                if let app = self.app, app.broadcastInput {
+                    app.broadcastWrite(bytes, from: self.id)
+                } else {
+                    self.connection?.write(bytes)
                 }
             }
-            if let app, app.broadcastInput {
-                app.broadcastWrite(bytes, from: self.id)
-            } else {
-                connection?.write(bytes)
+        }
+
+        engine.engineOnResize = { [weak self] cols, rows in
+            self?.connection?.resize(cols: cols, rows: rows)
+        }
+
+        engine.engineOnTitle = { [weak self] title in
+            guard let self else { return }
+            Task { @MainActor in
+                self.title = title.isEmpty ? self.config.name : title
+            }
+        }
+
+        engine.engineOnOpenLink = { link in
+            if let url = URL(string: link) { NSWorkspace.shared.open(url) }
+        }
+
+        engine.engineOnClipboardCopy = { content in
+            if let str = String(data: content, encoding: .utf8) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(str, forType: .string)
+            }
+        }
+
+        // Terminal bell -> macOS notification, so a long-running command can
+        // tell you it finished while MacMoba is in the background. Suppressed
+        // while the app is frontmost (you can already see it) and rate-limited,
+        // because some shells ring the bell on every tab-completion.
+        engine.engineOnBell = { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                guard !NSApp.isActive else { return }
+                let now = Date()
+                guard now.timeIntervalSince(Self.lastBell) > 5 else { return }
+                Self.lastBell = now
+                let note = NSUserNotification()
+                note.title = "MacMoba — \(self.config.name)"
+                note.informativeText = "The session rang the terminal bell."
+                NSUserNotificationCenter.default.deliver(note)
+                NSApp.requestUserAttention(.informationalRequest)
             }
         }
     }
@@ -600,51 +661,6 @@ extension TerminalTab: TerminalViewDelegate {
                       receivesBroadcast: receivesBroadcast)
     }
 
-    func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-        connection?.resize(cols: newCols, rows: newRows)
-    }
-
-    func setTerminalTitle(source: TerminalView, title: String) {
-        Task { @MainActor in
-            self.title = title.isEmpty ? config.name : title
-        }
-    }
-
-    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-
-    func scrolled(source: TerminalView, position: Double) {}
-
-    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-        if let url = URL(string: link) { NSWorkspace.shared.open(url) }
-    }
-
-    func clipboardCopy(source: TerminalView, content: Data) {
-        if let str = String(data: content, encoding: .utf8) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(str, forType: .string)
-        }
-    }
-
-    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
-
-    /// Terminal bell → macOS notification, so a long-running command can tell
-    /// you it finished while MacMoba is in the background. Suppressed while the
-    /// app is frontmost (you can already see it) and rate-limited, because some
-    /// shells ring the bell on every tab-completion.
-    func bell(source: TerminalView) {
-        Task { @MainActor in
-            guard !NSApp.isActive else { return }
-            let now = Date()
-            guard now.timeIntervalSince(Self.lastBell) > 5 else { return }
-            Self.lastBell = now
-            let note = NSUserNotification()
-            note.title = "MacMoba — \(config.name)"
-            note.informativeText = "The session rang the terminal bell."
-            NSUserNotificationCenter.default.deliver(note)
-            NSApp.requestUserAttention(.informationalRequest)
-        }
-    }
-
     @MainActor private static var lastBell = Date.distantPast
 }
 
@@ -653,11 +669,31 @@ extension TerminalTab: TerminalViewDelegate {
 /// Hosts the terminal view and reports focus: SwiftTerm's responder overrides
 /// aren't `open`, so focus is detected by observing the window's firstResponder.
 final class PaneContainerView: NSView {
-    let termView: TerminalView
+    /// Asked to take the keyboard when this container FIRST reaches a window.
+    ///
+    /// A one-shot `DispatchQueue.main.async` right after construction is a
+    /// guess about when SwiftUI will have placed the view, and it loses: the
+    /// SSH pane won that race and the local shell did not, leaving a shell
+    /// that ran, drew, and ignored the keyboard. Window entry is the event
+    /// itself rather than an approximation of it.
+    ///
+    /// FIRST entry, though, not every one. SwiftUI re-parents this container
+    /// whenever the layout changes, and opening the SFTP browser is a layout
+    /// change — so firing every time meant the pane snatched the keyboard back
+    /// from the file browser the moment it appeared. The listing still drew,
+    /// which is why it looked like "SFTP works but you cannot do anything in
+    /// it": renaming, filtering and every keyboard action need the focus that
+    /// was being taken away.
+    var onEnteredWindow: (() -> Void)?
+    private var hasTakenInitialFocus = false
+
+    /// Whatever the engine draws into — SwiftTerm's view or libghostty's
+    /// hosted surface. Typed as NSView so this container never has to know.
+    let termView: NSView
     var onFocusGained: (() -> Void)?
     private var observation: NSKeyValueObservation?
 
-    init(termView: TerminalView) {
+    init(termView: NSView) {
         self.termView = termView
         super.init(frame: .zero)
         adoptTerminal()
@@ -691,8 +727,17 @@ final class PaneContainerView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        // Going on screen is exactly when a container must own its terminal.
-        if window != nil { adoptTerminal() }
+        // Going on screen is exactly when a container must own its terminal,
+        // and when it can hand it the keyboard.
+        if window != nil {
+            // Adoption runs on every entry — a re-parented container must take
+            // its terminal back each time. Focus does not.
+            adoptTerminal()
+            if !hasTakenInitialFocus {
+                hasTakenInitialFocus = true
+                onEnteredWindow?()
+            }
+        }
         guard let window else {
             observation = nil
             return
@@ -719,13 +764,13 @@ extension TerminalTab {
     /// implicit resize chain can be missed.
     @MainActor
     func syncRemoteSize() {
-        let terminal = termView.getTerminal()
-        connection?.resize(cols: terminal.cols, rows: terminal.rows)
+        let grid = engine.engineGrid
+        connection?.resize(cols: grid.cols, rows: grid.rows)
     }
 
     @MainActor
     func applyFont(size: Double) {
-        termView.font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        engine.engineSetFontSize(size)
     }
 }
 
@@ -733,11 +778,9 @@ struct TerminalHostView: NSViewRepresentable {
     let tab: TerminalTab
 
     func makeNSView(context: Context) -> PaneContainerView {
-        let container = PaneContainerView(termView: tab.termView)
+        let container = PaneContainerView(termView: tab.engine.engineView)
         container.onFocusGained = { [weak tab] in tab?.onFocused?() }
-        DispatchQueue.main.async {
-            container.window?.makeFirstResponder(container.termView)
-        }
+        container.onEnteredWindow = { [weak tab] in tab?.engine.engineTakeFocus() }
         return container
     }
 

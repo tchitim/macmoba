@@ -6,10 +6,26 @@ import MacMobaCore
 import SwiftTerm
 import SwiftUI
 
+/// Owns the PTY itself rather than letting the terminal view own it.
+///
+/// `LocalProcessTerminalView` bundles a shell into a SwiftTerm view, which was
+/// the shortest path while SwiftTerm was the only engine. It also means the
+/// shell can only exist inside that one view. Holding a plain `LocalProcess`
+/// instead puts the local shell on the same footing as an SSH session: bytes
+/// in, bytes out, and the seam decides who draws them.
+///
+/// The dead-shell keys moved with it. They used to be a `send` override on a
+/// SwiftTerm subclass; as an input callback they are engine-agnostic, and
+/// still go through the same `DeadTerminalKey` an SSH pane uses, because one
+/// convention implemented twice is two conventions.
 @MainActor
 final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     let id = UUID()
-    let termView: LocalProcessTerminalView
+    /// SwiftTerm's view, kept for the callers not yet behind the seam (themes,
+    /// the clipboard menu). Nil-checked rather than assumed: with the
+    /// libghostty engine there is no SwiftTerm view at all.
+    let termView: TerminalView?
+    let engine: any TerminalEngineView
 
     @Published var title = "Local"
     @Published var state: TerminalTab.State = .connecting
@@ -17,17 +33,63 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     @Published private(set) var needsAttention = false
 
     private weak var app: AppState?
+    private let bridge = LocalShellBridge()
+    private let process: LocalProcess
 
     init(app: AppState) {
         self.app = app
-        termView = ClipboardLocalTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
-        termView.getTerminal().changeScrollback(TerminalDefaults.scrollback())
-        TerminalRendering.apply(to: termView)
+        let bridge = self.bridge
+        process = LocalProcess(delegate: bridge)
+        if TerminalDefaults.usesGhosttyEngine() {
+            termView = nil
+            engine = GhosttyEngine()
+        } else {
+            let view = ClipboardTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+            termView = view
+            // No owner set on purpose: `owner` is how the clipboard finds an
+            // SSH tab to upload a pasted image to, and a local shell has
+            // nowhere to upload to — the file would already be on this Mac.
+            engine = SwiftTermEngine(view: view)
+        }
+        engine.engineSetScrollback(TerminalDefaults.scrollback())
+        if let termView { TerminalRendering.apply(to: termView) }
         super.init()
-        (termView as? ClipboardLocalTerminalView)?.owner = self
-        termView.processDelegate = self
+
+        bridge.onData = { [weak self] slice in
+            Task { @MainActor in self?.engine.engineFeed(slice) }
+        }
+        bridge.onExit = { [weak self] code in
+            Task { @MainActor in
+                guard let self else { return }
+                self.state = .closed(code.map { "exit \($0)" } ?? "closed")
+                self.engine.engineFeed(
+                    ArraySlice(Array("\r\n\u{1b}[90m[shell exited]\u{1b}[0m\r\n".utf8)))
+            }
+        }
+        bridge.windowSize = { [weak self] in
+            guard let self else { return winsize(ws_row: 24, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0) }
+            let grid = MainActor.assumeIsolated { self.engine.engineGrid }
+            return winsize(ws_row: UInt16(grid.rows), ws_col: UInt16(grid.cols),
+                           ws_xpixel: 0, ws_ypixel: 0)
+        }
+
+        engine.engineOnInput = { [weak self] data in
+            guard let self else { return }
+            if self.handleKeyAtDeadShell(Array(data)) { return }
+            self.process.send(data: data)
+        }
+        engine.engineOnResize = { [weak self] cols, rows in
+            guard let self, self.process.childfd >= 0 else { return }
+            var size = winsize(ws_row: UInt16(rows), ws_col: UInt16(cols),
+                               ws_xpixel: 0, ws_ypixel: 0)
+            _ = ioctl(self.process.childfd, TIOCSWINSZ, &size)
+        }
+        engine.engineOnTitle = { [weak self] title in
+            Task { @MainActor in self?.title = title.isEmpty ? "Local" : title }
+        }
+
         applyFont(size: app.terminalFontSize)
-        app.theme.apply(to: termView)
+        engine.engineApplyTheme(app.theme)
     }
 
     func start(directory: String? = nil) {
@@ -45,7 +107,7 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
             env.append("MACMOBA_CLI=\(cli)")
         }
         state = .connected
-        termView.startProcess(
+        process.startProcess(
             executable: shell,
             args: [],
             environment: env,
@@ -55,8 +117,8 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     }
 
     /// Keys typed at a dead shell. Returns true when the keystroke was one of
-    /// the two ways out, so the view swallows it instead of writing to a PTY
-    /// that no longer exists.
+    /// the two ways out, so it is swallowed instead of written to a PTY that no
+    /// longer exists.
     ///
     /// Same policy object as an SSH pane, deliberately: "Return reconnects, Esc
     /// closes" is one convention, and a second implementation of it is how the
@@ -78,39 +140,32 @@ final class LocalTerminalTab: NSObject, ObservableObject, Identifiable {
     }
 
     func disconnect() {
-        // Terminating the shell tears down the PTY.
-        if let pid = termView.process?.shellPid {
-            kill(pid, SIGHUP)
-        }
+        process.terminate()
         state = .closed("closed")
     }
 
     func applyFont(size: Double) {
-        termView.font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        engine.engineSetFontSize(size)
     }
 
     func markAttention() { needsAttention = true }
     func clearAttention() { if needsAttention { needsAttention = false } }
 }
 
-extension LocalTerminalTab: LocalProcessTerminalViewDelegate {
-    nonisolated func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
+/// The PTY side, off the main actor because LocalProcess delivers on its own
+/// queue. Same reason the experimental panes have one.
+private final class LocalShellBridge: NSObject, LocalProcessDelegate, @unchecked Sendable {
+    var onData: ((ArraySlice<UInt8>) -> Void)?
+    var onExit: ((Int32?) -> Void)?
+    var windowSize: (() -> winsize)?
 
-    nonisolated func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
-        Task { @MainActor in
-            self.title = title.isEmpty ? "Local" : title
-        }
-    }
-
-    nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-
-    nonisolated func processTerminated(source: TerminalView, exitCode: Int32?) {
-        Task { @MainActor in
-            self.state = .closed(exitCode.map { "exit \($0)" } ?? "closed")
-            source.feed(text: "\r\n\u{1b}[90m[shell exited]\u{1b}[0m\r\n")
-        }
+    func dataReceived(slice: ArraySlice<UInt8>) { onData?(slice) }
+    func processTerminated(_ source: LocalProcess, exitCode: Int32?) { onExit?(exitCode) }
+    func getWindowSize() -> winsize {
+        windowSize?() ?? winsize(ws_row: 24, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0)
     }
 }
+
 
 struct LocalTerminalHostView: NSViewRepresentable {
     let tab: LocalTerminalTab
@@ -129,11 +184,9 @@ struct LocalTerminalHostView: NSViewRepresentable {
     /// put it. If SwiftUI then keeps an earlier host on screen, the pane draws
     /// nothing: right border, right title, blank middle.
     func makeNSView(context: Context) -> PaneContainerView {
-        let container = PaneContainerView(termView: tab.termView)
+        let container = PaneContainerView(termView: tab.engine.engineView)
         container.onFocusGained = onFocus
-        DispatchQueue.main.async {
-            container.window?.makeFirstResponder(container.termView)
-        }
+        container.onEnteredWindow = { [weak tab] in tab?.engine.engineTakeFocus() }
         return container
     }
 

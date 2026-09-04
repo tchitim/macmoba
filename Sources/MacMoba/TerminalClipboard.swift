@@ -92,15 +92,28 @@ enum TerminalClipboard {
     ///   ⇧⌘4, and left it there for good. Deliberate pastes — ⌘V and the menu
     ///   item — still upload, because that is the feature working as intended.
     static func requestPaste(into view: TerminalView, allowImageUpload: Bool = true) {
+        PasteTrace.log("requestPaste (SwiftTerm path), images=\(allowImageUpload), "
+                       + "text=\(clipboardText()?.count ?? -1) chars")
         // A pasted screenshot in an SSH pane goes to the remote as a file, and
         // its path lands in the prompt — how you hand an image to an agent
         // running over there (cmux workflow, SSH edition).
+        // Through the engine wrapper, which is the view's delegate now. The
+        // direct `as? TerminalTab` this replaces had been quietly failing for
+        // every pane since the wrapper was introduced.
         if allowImageUpload,
-           let tab = view.terminalDelegate as? TerminalTab,
+           let tab = (view.terminalDelegate as? SwiftTermEngine)?.owner,
            tab.config.sessionKind.authenticatesOverSSH,
            let png = clipboardImagePNG() {
             tab.pasteImageToRemote(png)
             return
+        }
+        // An image is on the clipboard, this path was allowed to upload it, and
+        // no pane could be identified — which is what the broken cast looked
+        // like from the outside: nothing happened, no error, for months. Say it
+        // rather than fall through in silence.
+        if allowImageUpload, clipboardImagePNG() != nil,
+           (view.terminalDelegate as? SwiftTermEngine)?.owner == nil {
+            NSLog("MacMoba: image paste ignored — no owning pane for this view")
         }
         guard let text = clipboardText(), !text.isEmpty else { return }
         let summary = PasteGuard.inspect(text)
@@ -338,5 +351,91 @@ final class ClipboardLocalTerminalView: LocalProcessTerminalView {
             return TerminalClipboard.clipboardText()?.isEmpty == false
         }
         return super.validateUserInterfaceItem(item)
+    }
+}
+
+/// Traces which paste path actually ran.
+///
+/// "Paste does nothing" has several possible shapes — the gesture never
+/// reaching the app, the app deciding there is nothing to paste, or the text
+/// reaching the terminal and the terminal ignoring it — and from outside they
+/// are identical. Each entry point says which one it is.
+///
+///     defaults write dev.macmoba.MacMoba ghosttyDebugLog -bool true
+enum PasteTrace {
+    static var enabled: Bool {
+        UserDefaults.standard.bool(forKey: "ghosttyDebugLog")
+    }
+
+    static func log(_ what: String) {
+        guard enabled else { return }
+        NSLog("ghostty: paste — %@", what)
+    }
+}
+
+// MARK: - Engine-based context menu
+//
+// The menu above targets SwiftTerm's view and its selectors, which only exists
+// on one of the two engines. This builds the same menu against the seam, so a
+// libghostty pane gets a real right-click menu rather than an empty one.
+
+/// Carries the menu's actions. AppKit needs an `@objc` target, and the engine
+/// is a protocol existential, so this sits between them.
+@MainActor
+final class ClipboardMenuTarget: NSObject {
+    private let engine: any TerminalEngineView
+
+    init(engine: any TerminalEngineView) {
+        self.engine = engine
+        super.init()
+    }
+
+    @objc func copySelection(_ sender: Any?) {
+        guard let text = engine.engineSelection(), !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    @objc func pasteClipboard(_ sender: Any?) {
+        guard let text = TerminalClipboard.clipboardText(), !text.isEmpty else {
+            PasteTrace.log("menu Paste: clipboard held no text")
+            return
+        }
+        PasteTrace.log("menu Paste: \(text.count) chars to \(engine.engineName)")
+        engine.enginePaste(text)
+    }
+
+    @objc func pasteAsOneLine(_ sender: Any?) {
+        guard let text = TerminalClipboard.clipboardText(), !text.isEmpty else { return }
+        engine.enginePaste(PasteGuard.singleLine(text))
+    }
+
+    @objc func selectAll(_ sender: Any?) {
+        engine.engineSelectAll()
+    }
+
+    func menu() -> NSMenu {
+        let hasClipboard = TerminalClipboard.clipboardText()?.isEmpty == false
+        let menu = NSMenu()
+        // Set explicitly for the same reason the SwiftTerm menu does it:
+        // automatic validation rejects selectors it does not recognise.
+        menu.autoenablesItems = false
+        add(menu, "Copy", #selector(copySelection(_:)), engine.engineHasSelection)
+        add(menu, "Paste", #selector(pasteClipboard(_:)), hasClipboard)
+        add(menu, "Paste as One Line", #selector(pasteAsOneLine(_:)), hasClipboard)
+        // Only where the engine actually has one; libghostty does not, and an
+        // item that quietly does nothing is worse than a shorter menu.
+        if engine.engineCanSelectAll {
+            menu.addItem(.separator())
+            add(menu, "Select All", #selector(selectAll(_:)), true)
+        }
+        return menu
+    }
+
+    private func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ enabled: Bool) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.isEnabled = enabled
+        menu.addItem(item)
     }
 }

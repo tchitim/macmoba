@@ -33,7 +33,23 @@ swift build -c release
 
 APP=MacMoba.app
 BIN=.build/release/MacMoba
-VERSION=2.29
+VERSION=3.07
+
+# Which terminal engine a build defaults to.
+#
+# Empty unless GHOSTTY_DEFAULT=1 is passed, so a release can never ship the
+# libghostty default by accident — it takes a deliberate environment variable,
+# not a branch that someone has to remember to change back. Both branches keep
+# an identical script, which also means this never becomes another merge
+# conflict beside VERSION.
+#
+#   GHOSTTY_DEFAULT=1 ./make-app.sh --notarize    # local build, libghostty on
+#   ./make-app.sh --notarize                      # anything published
+ENGINE_PLIST_ENTRY=""
+if [[ "${GHOSTTY_DEFAULT:-0}" == "1" ]]; then
+  ENGINE_PLIST_ENTRY=$'\n    <key>MacMobaDefaultEngine</key>\n    <string>ghostty</string>'
+  echo "Default terminal engine: libghostty (GHOSTTY_DEFAULT=1)"
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -118,7 +134,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
-    <string>${VERSION}</string>
+    <string>${VERSION}</string>${ENGINE_PLIST_ENTRY}
     <key>CFBundleVersion</key>
     <string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key>

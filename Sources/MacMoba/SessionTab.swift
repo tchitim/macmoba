@@ -343,6 +343,8 @@ final class SessionTab: ObservableObject, Identifiable {
         local.start(directory: directory)
     }
 
+
+
     /// VNC tab: no pane tree, no SFTP — just the framebuffer.
     init(vnc config: SessionConfig, app: AppState) {
         self.config = config
@@ -477,8 +479,12 @@ final class SessionTab: ObservableObject, Identifiable {
         // The pane in front, whatever it is — a thumbnail of the desktop beside
         // the shell should show whichever one you were last looking at.
         switch focusedContent {
-        case .terminal(let pane): return pane.termView
-        case .localShell(let pane): return pane.termView
+        case .terminal(let pane): return pane.engine.engineView
+        case .localShell(let pane): return pane.engine.engineView
+        // No AppKit view to hand over: the libghostty surface is owned by the
+        // package's SwiftUI view, so this experimental pane has no Overview
+        // thumbnail. Nil rather than a stand-in, which would show the wrong
+        // pane's picture.
         case .vnc(let pane): return pane.container
         case .rdp(let pane): return pane.container
         case .web(let pane): return pane.webView
@@ -575,6 +581,7 @@ final class SessionTab: ObservableObject, Identifiable {
         local.start(directory: nil)
         settleLayout()
     }
+
 
     func splitFocused(_ axis: Axis, config newConfig: SessionConfig? = nil) {
         // The pane being split may not be a terminal — splitting a shell INTO a
@@ -675,7 +682,7 @@ final class SessionTab: ObservableObject, Identifiable {
             guard let self else { return }
             for pane in self.panes { pane.syncRemoteSize() }
             if let focused = self.focusedPane {
-                focused.termView.window?.makeFirstResponder(focused.termView)
+                focused.engine.engineTakeFocus()
             }
         }
     }
@@ -885,6 +892,22 @@ final class SessionTab: ObservableObject, Identifiable {
             }
         }
         return model
+    }
+
+    /// Which terminal engine this tab's panes are drawn with, or nil for a
+    /// tab that has no terminal in it. "mixed" is possible: the engine is
+    /// chosen when a pane is built, so panes opened either side of a change
+    /// to the setting genuinely differ.
+    var engineName: String? {
+        let names = Set(Self.contents(root).compactMap { content -> String? in
+            switch content {
+            case .terminal(let pane): return pane.engine.engineName
+            case .localShell(let pane): return pane.engine.engineName
+            default: return nil
+            }
+        })
+        if names.isEmpty { return nil }
+        return names.count == 1 ? names.first : "mixed"
     }
 
     /// The status dot for a file-browser tab mirrors its one connection.
