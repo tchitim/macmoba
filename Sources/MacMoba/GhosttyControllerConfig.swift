@@ -31,6 +31,21 @@ enum GhosttyControllerConfig {
         return TerminalController { builder in
             builder.withBackgroundOpacity(1)
             builder.withCustom("scrollback-limit", String(limit))
+            // The host owns every shortcut.
+            //
+            // Ghostty ships keybinds for a standalone terminal — super+t for a
+            // new tab, super+d to split, super+k to clear, super+w, the font
+            // sizes — and this app's menus use the same combinations for its
+            // own versions of those things. libghostty won, swallowing the key
+            // and performing an action no host implements, so ⌘T did nothing
+            // at all. ⌘D, ⌘K and ⌘W were queued up behind it.
+            //
+            // Clearing them is the whole class of bug rather than the one
+            // reported. Nothing is lost that this app does not already
+            // provide: copy and paste arrive through the Edit menu and the
+            // responder chain, and the menu actions call libghostty by name
+            // rather than through a keybind.
+            builder.withCustom("keybind", "clear")
         }
     }
 }

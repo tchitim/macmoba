@@ -42,4 +42,12 @@ let themed = MainActor.assumeIsolated {
 }
 print("theme reaches config: \(themed.contains("#123456") && themed.contains("3=#abcdef") ? "YES" : "NO")")
 
-exit(dir != nil && terminfo != nil && carried ? 0 : 1)
+// Do the host's shortcuts survive into the config? Ghostty's own keybinds
+// otherwise swallow ⌘T and friends before any menu sees them.
+let cleared = MainActor.assumeIsolated {
+    TerminalController { $0.withCustom("keybind", "clear") }.renderedConfig
+}
+let keybindsCleared = cleared.contains("keybind") && cleared.contains("clear")
+print("keybind clear reaches config: \(keybindsCleared ? "YES" : "NO")")
+
+exit(dir != nil && terminfo != nil && carried && keybindsCleared ? 0 : 1)
