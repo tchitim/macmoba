@@ -56,6 +56,14 @@ protocol TerminalEngineView: AnyObject {
     /// The AppKit view, for the pane container to place and re-parent.
     var engineView: NSView { get }
 
+    /// The pane this draws for, when it has one.
+    ///
+    /// The clipboard needs it to upload a pasted screenshot, and reaches a
+    /// terminal through the AppKit responder chain holding only a view. It
+    /// lived on the SwiftTerm wrapper alone, which is why pasting an image
+    /// did nothing at all once libghostty became the default engine.
+    var engineOwner: TerminalTab? { get set }
+
     /// Which library is drawing this pane, for `macmoba list-tabs`.
     ///
     /// Added because there was no way to answer "am I on libghostty?" from
@@ -179,7 +187,7 @@ final class SwiftTermEngine: NSObject, TerminalEngineView {
     /// screenshot into an SSH session silently stopped uploading — it fell
     /// through to the text path and did nothing visible. No test noticed,
     /// because what broke was a cast, not a behaviour anything asserts on.
-    weak var owner: TerminalTab?
+    weak var engineOwner: TerminalTab?
 
     /// Callers that still need SwiftTerm specifically — search reads its buffer
     /// types, themes set its colour arrays. Both are named in this file's

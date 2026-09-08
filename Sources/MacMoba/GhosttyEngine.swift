@@ -76,9 +76,13 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
             switch item.action {
             case Selector(("paste:")):
+                // An image counts: it is pasteable here even though it is not
+                // text, and validating on text alone would grey out ⌘V for
+                // exactly the screenshot case this pane needs most.
                 let has = NSPasteboard.general.canReadObject(
                     forClasses: [NSString.self], options: nil)
-                PasteTrace.log("validate paste: -> \(has ? "enabled" : "no text on clipboard")")
+                    || TerminalClipboard.clipboardImagePNG() != nil
+                PasteTrace.log("validate paste: -> \(has ? "enabled" : "clipboard empty")")
                 return has
             case Selector(("copy:")):
                 return state?.surface?.hasSelection() ?? false
@@ -163,6 +167,8 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
     var engineView: NSView { hosting }
 
     var engineName: String { "libghostty" }
+
+    weak var engineOwner: TerminalTab?
 
     func engineFeed(_ bytes: ArraySlice<UInt8>) { session.receive(Data(bytes)) }
 

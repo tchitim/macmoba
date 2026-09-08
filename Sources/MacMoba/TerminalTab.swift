@@ -103,7 +103,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         super.init()
         // So the clipboard can find this tab from the view again; see
         // SwiftTermEngine.owner.
-        (engine as? SwiftTermEngine)?.owner = self
+        engine.engineOwner = self
         wireEngine()
         applyFont(size: app.terminalFontSize)
         engine.engineApplyTheme(app.theme)
