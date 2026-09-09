@@ -453,9 +453,33 @@ enum PasteTrace {
         UserDefaults.standard.bool(forKey: "ghosttyDebugLog")
     }
 
+    /// Beside the session logs, because unified logging could not be relied
+    /// on to show any of this.
+    ///
+    /// Two rounds of diagnosis produced no output at all from `log show` on
+    /// the reporter's machine — not the app's lines, not even the ones the
+    /// terminal library emits — so a trace that only reaches os_log is a
+    /// trace nobody can read. A file is dull and it works.
+    static var logURL: URL {
+        SessionLogger.directory.appendingPathComponent("MacMoba-Paste.log")
+    }
+
     static func log(_ what: String) {
         guard enabled else { return }
         NSLog("ghostty: paste — %@", what)
+
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let line = "\(stamp)  \(what)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        try? FileManager.default.createDirectory(at: SessionLogger.directory,
+                                                 withIntermediateDirectories: true)
+        if let handle = try? FileHandle(forWritingTo: logURL) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: logURL)
+        }
     }
 }
 
