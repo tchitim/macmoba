@@ -124,13 +124,35 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
                     return true
                 }
 
-                // Text goes through libghostty's own paste rather than this
-                // app's send-text call. Routing it the other way is what broke
-                // plain text after images started working: the binding is the
-                // path that was demonstrably delivering text before, and it
-                // applies the bracketed-paste framing a shell expects.
-                let sent = performBindingAction("paste_from_clipboard")
-                PasteTrace.log("⌘V: text via paste_from_clipboard -> \(sent ? "sent" : "REFUSED")")
+                // Multi-line text is confirmed first, the same as on a
+                // SwiftTerm pane. The guard exists so a clipboard holding
+                // several commands cannot run them by being pasted, and it
+                // should not depend on which library is drawing.
+                let text = TerminalClipboard.clipboardText() ?? ""
+                TerminalClipboard.confirmIfNeeded(text, window: window) { [weak self] choice in
+                    guard let self else { return }
+                    switch choice {
+                    case .paste:
+                        // libghostty's own paste, not this app's send-text
+                        // call: routing it the other way is what broke plain
+                        // text once already, and the binding applies the
+                        // bracketed-paste framing a shell expects.
+                        let sent = self.performBindingAction("paste_from_clipboard")
+                        PasteTrace.log("⌘V: text via paste_from_clipboard -> "
+                                       + "\(sent ? "sent" : "REFUSED")")
+                    case .oneLine:
+                        // Sent as input rather than through the clipboard,
+                        // because the clipboard still holds the original. Safe
+                        // to send raw: the newlines are exactly what has been
+                        // taken out, so there is nothing for bracketed paste
+                        // to protect against.
+                        let line = PasteGuard.singleLine(text)
+                        self.menuTarget?.sendAsInput(line)
+                        PasteTrace.log("⌘V: \(line.count) chars as one line")
+                    case .cancel:
+                        PasteTrace.log("⌘V: cancelled at the confirmation")
+                    }
+                }
                 return true
             }
             return super.performKeyEquivalent(with: event)

@@ -202,13 +202,10 @@ enum TerminalClipboard {
             NSLog("MacMoba: image paste ignored — no owning pane for this view")
         }
         guard let text = clipboardText(), !text.isEmpty else { return }
-        let summary = PasteGuard.inspect(text)
-        guard ClipboardPrefs.shared.warnMultilinePaste, summary.needsConfirmation,
-              let window = view.window else {
-            send(text, to: view)
-            return
-        }
-        confirm(text, summary: summary, window: window) { [weak view] choice in
+        // Through the shared decision, so both engines ask the same question.
+        // It was written twice for a while, which is how the libghostty pane
+        // came to have no confirmation at all.
+        confirmIfNeeded(text, window: view.window) { [weak view] choice in
             guard let view else { return }
             switch choice {
             case .paste: send(text, to: view)
@@ -239,6 +236,23 @@ enum TerminalClipboard {
     // MARK: Confirmation
 
     enum PasteChoice { case paste, oneLine, cancel }
+
+    /// The multi-line paste confirmation, for callers outside this file.
+    ///
+    /// The libghostty pane reaches it from its own key handler: ⌘V there is
+    /// caught on the view rather than routed through this app's paste, so
+    /// without this the guard against running several commands by accident
+    /// applied on one engine and not the other.
+    static func confirmIfNeeded(_ text: String, window: NSWindow?,
+                                completion: @escaping (PasteChoice) -> Void) {
+        let summary = PasteGuard.inspect(text)
+        guard ClipboardPrefs.shared.warnMultilinePaste, summary.needsConfirmation,
+              let window else {
+            completion(.paste)
+            return
+        }
+        confirm(text, summary: summary, window: window, completion: completion)
+    }
 
     private static func confirm(
         _ text: String,
@@ -497,6 +511,14 @@ final class ClipboardMenuTarget: NSObject {
 
     /// The pane, for the key-equivalent path that needs it directly.
     var owningTab: TerminalTab? { engine.engineOwner }
+
+    /// Put text in as though it had been typed.
+    ///
+    /// The same route a keystroke takes, so it reaches a PTY or an SSH
+    /// connection without this needing to know which.
+    func sendAsInput(_ text: String) {
+        engine.engineOnInput?(ArraySlice(Array(text.utf8)))
+    }
 
     init(engine: any TerminalEngineView) {
         self.engine = engine
