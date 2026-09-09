@@ -87,9 +87,32 @@ enum TerminalClipboard {
             return (data, ext)
         }
 
-        // Raw image data only when there is no text, because a copied web
-        // selection carries both and the text is what was meant.
-        guard clipboardText()?.isEmpty != false else { return nil }
+        // A path written as plain text, with no file URL beside it.
+        //
+        // Copying a picture in Photos produces exactly this: the string is a
+        // path inside the photo library and there is no file URL to find, so
+        // the check above sees nothing and the path gets typed at the remote,
+        // where it names nothing. Narrow on purpose — one line, absolute, an
+        // existing file, and an image by content type — so ordinary text that
+        // happens to mention a path is still pasted as text.
+        let pathAsText = clipboardText().flatMap(imagePathWrittenAsText)
+        if let url = pathAsText {
+            if let data = try? Data(contentsOf: url) {
+                let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension.lowercased()
+                return (data, ext)
+            }
+            // Named an image and could not be opened. A photo library is
+            // protected by macOS privacy, so this is the likely everyday case
+            // — and falling through silently would paste the path again, which
+            // is the failure being fixed. The raw image data below is tried
+            // next, since a picture usually rides along with its path.
+            PasteTrace.log("image path on clipboard could not be read: \(url.path)")
+        }
+
+        // Raw image data. Normally only when there is no text — a copied web
+        // selection carries both and the text is what was meant — but text
+        // that is merely a path to a picture is not text anybody wants typed.
+        guard clipboardText()?.isEmpty != false || pathAsText != nil else { return nil }
         if let png = pasteboard.data(forType: .png) { return (png, "png") }
         if let tiff = pasteboard.data(forType: .tiff),
            let rep = NSBitmapImageRep(data: tiff),
@@ -111,6 +134,30 @@ enum TerminalClipboard {
             (try? url.resourceValues(forKeys: [.contentTypeKey]))?
                 .contentType?.conforms(to: .image) == true
         }
+    }
+
+    /// A single absolute path naming an image file, or nil.
+    private static func imagePathWrittenAsText(_ text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.contains("\n"), trimmed.hasPrefix("/") else { return nil }
+        let url = URL(fileURLWithPath: trimmed)
+        guard let values = try? url.resourceValues(forKeys: [.contentTypeKey, .isRegularFileKey]),
+              values.isRegularFile == true,
+              values.contentType?.conforms(to: .image) == true else { return nil }
+        return url
+    }
+
+    /// Everything the pasteboard is offering, for when a paste does the wrong
+    /// thing and the reason is which flavour won.
+    static func describePasteboard() -> String {
+        let pb = NSPasteboard.general
+        let types = (pb.types ?? []).map(\.rawValue).joined(separator: ", ")
+        let text = pb.string(forType: .string)
+        let opts: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let urls = (pb.readObjects(forClasses: [NSURL.self], options: opts) as? [URL]) ?? []
+        return "types=[\(types)] "
+            + "string=\(text.map { "\"\($0.prefix(120))\"" } ?? "nil") "
+            + "fileURLs=\(urls.map(\.lastPathComponent))"
     }
 
     /// Kept for callers that only ask "is there a picture".
@@ -436,6 +483,7 @@ final class ClipboardMenuTarget: NSObject {
     }
 
     @objc func pasteClipboard(_ sender: Any?) {
+        PasteTrace.log(TerminalClipboard.describePasteboard())
         // Images first, exactly as the SwiftTerm path does: a screenshot in an
         // SSH pane is uploaded and its path typed, which is how an image is
         // handed to an agent running over there. This branch was missing here,
