@@ -96,6 +96,27 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
                 return true
             }
         }
+
+        /// Catch ⌘V on the view, without going through the menu at all.
+        ///
+        /// The trace settled this: AppKit asked whether Paste applied, was
+        /// told yes, and then never called `paste(_:)` here. The menu's action
+        /// goes somewhere else, so everything downstream of it was unreachable
+        /// no matter how the clipboard was read — which is why three attempts
+        /// at reading the clipboard differently all changed nothing.
+        ///
+        /// A key equivalent on the view does not depend on which responder the
+        /// menu hands its action to. Only plain ⌘V: ⇧⌘V is Paste as One Line
+        /// and stays with the app's own menu item.
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "v" {
+                PasteTrace.log("⌘V caught by performKeyEquivalent")
+                menuTarget?.pasteClipboard(nil)
+                return true
+            }
+            return super.performKeyEquivalent(with: event)
+        }
     }
 
     private var menuTarget: ClipboardMenuTarget?
