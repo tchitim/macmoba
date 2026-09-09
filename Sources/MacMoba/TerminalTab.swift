@@ -453,7 +453,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
     /// the prompt — nothing is "run": the user keeps composing (for an agent,
     /// usually) and presses Return themselves.
     @MainActor
-    func pasteImageToRemote(_ png: Data) {
+    func pasteImageToRemote(_ png: Data, fileExtension: String = "png") {
         guard state == .connected else {
             postStatus("Not connected — image not uploaded.", isError: true)
             return
@@ -464,7 +464,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
             do {
                 let route = try await resolvedRoute()
                 let path = try await RemotePasteUpload.upload(
-                    data: png, fileName: "paste-\(stamp).png",
+                    data: png, fileName: "paste-\(stamp).\(fileExtension)",
                     config: route.config, jumps: route.jumps,
                     hostKeys: app?.hostKeyVerification)
                 await MainActor.run {

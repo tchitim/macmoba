@@ -29,7 +29,11 @@ final class RemotePasteRetentionTests: XCTestCase {
     /// Anything that is not one of ours is untouchable, however old. The
     /// directory is the user's, not this feature's.
     func testLeavesForeignFilesAlone() {
-        let foreign = ["notes.txt", "paste-old.png", "paste-123.jpg", "screenshot.png",
+        // `paste-123.jpg` is deliberately NOT here any more: once uploads
+        // could carry a photo's own extension, that name became one of ours
+        // by shape — paste-, digits, an image extension — and 123 is 1970.
+        // The rule widened on purpose; this list is what must stay untouched.
+        let foreign = ["notes.txt", "paste-old.png", "screenshot.png",
                        "paste-.png", "prefix-paste-1.png", ".hidden"]
         XCTAssertTrue(RemotePasteRetention.expired(names: foreign, now: now).isEmpty)
     }
@@ -115,5 +119,33 @@ extension RemotePasteRetentionTests {
         // The guard lives in sweepExpired, which needs a client; this records
         // that the two disagree on purpose, so the filter is not mistaken for
         // redundancy later.
+    }
+}
+
+extension RemotePasteRetentionTests {
+    /// A copied photo uploads with its own extension, so sweeping only .png
+    /// would let every one of those accumulate forever.
+    func testExpiresEveryImageExtensionItUploads() {
+        for ext in ["png", "jpg", "jpeg", "heic", "gif", "tiff", "webp", "bmp"] {
+            let old = "paste-\(Int(now.timeIntervalSince1970 - 8 * 86_400)).\(ext)"
+            XCTAssertEqual(RemotePasteRetention.expired(names: [old], now: now), [old],
+                           "\(ext) should expire")
+        }
+    }
+
+    /// Widening the extensions must not widen it into other people's files.
+    func testStillLeavesNonImagesAlone() {
+        let old = Int(now.timeIntervalSince1970 - 30 * 86_400)
+        let safe = ["paste-\(old).tar.gz", "paste-\(old).txt", "paste-\(old).sh",
+                    "paste-\(old)", "paste-\(old).png.bak"]
+        XCTAssertTrue(RemotePasteRetention.expired(names: safe, now: now).isEmpty,
+                      "swept something that is not one of ours")
+    }
+
+    /// Case is not a licence to delete something else, but our own uploads
+    /// may arrive capitalised from a file name.
+    func testExtensionMatchIsCaseInsensitive() {
+        let old = "paste-\(Int(now.timeIntervalSince1970 - 8 * 86_400)).JPEG"
+        XCTAssertEqual(RemotePasteRetention.expired(names: [old], now: now), [old])
     }
 }

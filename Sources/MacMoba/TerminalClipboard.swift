@@ -10,6 +10,7 @@
 // thin set of overrides.
 
 import AppKit
+import UniformTypeIdentifiers
 import MacMobaCore
 import SwiftTerm
 
@@ -63,19 +64,57 @@ enum TerminalClipboard {
         NSPasteboard.general.string(forType: .string)
     }
 
-    /// PNG bytes when the clipboard holds an image and no text — a screenshot,
-    /// not a copied web selection (those carry both, and text wins).
-    static func clipboardImagePNG() -> Data? {
+    /// An image on the clipboard, with the extension to give it.
+    ///
+    /// Two shapes count. A copied image FILE — from Photos or Finder — arrives
+    /// as a file URL, and those bytes are sent as they are. A copied image
+    /// with no file behind it, such as a screenshot, arrives as raw data and
+    /// becomes PNG.
+    static func clipboardImage() -> (data: Data, fileExtension: String)? {
         let pasteboard = NSPasteboard.general
+
+        // Files first, and BEFORE the text check below. A file on the
+        // pasteboard also carries its path as text, so that check rejected
+        // every copied picture and the path was pasted instead — a path on
+        // this Mac, which means nothing on the machine at the other end.
+        //
+        // The original bytes rather than a PNG conversion: re-encoding a
+        // photo's JPEG can multiply its size several times over, and this is
+        // about to go up an SSH connection.
+        if let url = imageFileOnPasteboard(pasteboard),
+           let data = try? Data(contentsOf: url) {
+            let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension.lowercased()
+            return (data, ext)
+        }
+
+        // Raw image data only when there is no text, because a copied web
+        // selection carries both and the text is what was meant.
         guard clipboardText()?.isEmpty != false else { return nil }
-        if let png = pasteboard.data(forType: .png) { return png }
+        if let png = pasteboard.data(forType: .png) { return (png, "png") }
         if let tiff = pasteboard.data(forType: .tiff),
            let rep = NSBitmapImageRep(data: tiff),
            let png = rep.representation(using: .png, properties: [:]) {
-            return png
+            return (png, "png")
         }
         return nil
     }
+
+    /// The first pasteboard file that is actually an image.
+    ///
+    /// Asked by content type rather than by extension, so a file named
+    /// without one, or named misleadingly, is judged by what it is.
+    private static func imageFileOnPasteboard(_ pasteboard: NSPasteboard) -> URL? {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self],
+                                                options: options) as? [URL] else { return nil }
+        return urls.first { url in
+            (try? url.resourceValues(forKeys: [.contentTypeKey]))?
+                .contentType?.conforms(to: .image) == true
+        }
+    }
+
+    /// Kept for callers that only ask "is there a picture".
+    static func clipboardImagePNG() -> Data? { clipboardImage()?.data }
 
     /// Paste, asking first when the clipboard would run more than one command.
     /// The alert is a window sheet rather than `runModal()`: a global modal
@@ -103,8 +142,8 @@ enum TerminalClipboard {
         if allowImageUpload,
            let tab = (view.terminalDelegate as? SwiftTermEngine)?.engineOwner,
            tab.config.sessionKind.authenticatesOverSSH,
-           let png = clipboardImagePNG() {
-            tab.pasteImageToRemote(png)
+           let image = clipboardImage() {
+            tab.pasteImageToRemote(image.data, fileExtension: image.fileExtension)
             return
         }
         // An image is on the clipboard, this path was allowed to upload it, and
@@ -403,9 +442,9 @@ final class ClipboardMenuTarget: NSObject {
         // so pasting a picture into a libghostty pane did nothing whatsoever.
         if let tab = engine.engineOwner,
            tab.config.sessionKind.authenticatesOverSSH,
-           let png = TerminalClipboard.clipboardImagePNG() {
-            PasteTrace.log("menu Paste: \(png.count) byte image -> upload")
-            tab.pasteImageToRemote(png)
+           let image = TerminalClipboard.clipboardImage() {
+            PasteTrace.log("menu Paste: \(image.data.count) byte .\(image.fileExtension) -> upload")
+            tab.pasteImageToRemote(image.data, fileExtension: image.fileExtension)
             return
         }
         guard let text = TerminalClipboard.clipboardText(), !text.isEmpty else {
