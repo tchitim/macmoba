@@ -495,6 +495,9 @@ enum PasteTrace {
 final class ClipboardMenuTarget: NSObject {
     private let engine: any TerminalEngineView
 
+    /// The pane, for the key-equivalent path that needs it directly.
+    var owningTab: TerminalTab? { engine.engineOwner }
+
     init(engine: any TerminalEngineView) {
         self.engine = engine
         super.init()

@@ -112,7 +112,25 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "v" {
                 PasteTrace.log("⌘V caught by performKeyEquivalent")
-                menuTarget?.pasteClipboard(nil)
+                PasteTrace.log(TerminalClipboard.describePasteboard())
+
+                // A picture goes to the remote as a file, which is this app's
+                // job and nothing the terminal could do.
+                if let tab = menuTarget?.owningTab,
+                   tab.config.sessionKind.authenticatesOverSSH,
+                   let image = TerminalClipboard.clipboardImage() {
+                    PasteTrace.log("⌘V: \(image.data.count) byte .\(image.fileExtension) -> upload")
+                    tab.pasteImageToRemote(image.data, fileExtension: image.fileExtension)
+                    return true
+                }
+
+                // Text goes through libghostty's own paste rather than this
+                // app's send-text call. Routing it the other way is what broke
+                // plain text after images started working: the binding is the
+                // path that was demonstrably delivering text before, and it
+                // applies the bracketed-paste framing a shell expects.
+                let sent = performBindingAction("paste_from_clipboard")
+                PasteTrace.log("⌘V: text via paste_from_clipboard -> \(sent ? "sent" : "REFUSED")")
                 return true
             }
             return super.performKeyEquivalent(with: event)
