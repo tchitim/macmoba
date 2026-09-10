@@ -85,7 +85,11 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
                 PasteTrace.log("validate paste: -> \(has ? "enabled" : "clipboard empty")")
                 return has
             case Selector(("copy:")):
-                return state?.surface?.hasSelection() ?? false
+                // Always enabled, rather than asking `state.surface` — that is
+                // a WEAK reference, and when it is nil this returned false and
+                // left Copy permanently greyed out. Copy with no selection is
+                // a harmless no-op; a Copy that can never be pressed is not.
+                return true
             case Selector(("selectAll:")):
                 // The action exists on the view but the surface API behind it
                 // does nothing, so an enabled item would be a lie.
@@ -110,6 +114,20 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         /// and stays with the app's own menu item.
         override func performKeyEquivalent(with event: NSEvent) -> Bool {
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "c" {
+                // On the view for the same reason as ⌘V below: the menu's
+                // action does not arrive here. `copySelectedTextToPasteboard`
+                // belongs to the view, which is certainly alive — this method
+                // is running on it — rather than to the weak surface reference
+                // that was making Copy look unavailable.
+                let copied = copySelectedTextToPasteboard()
+                PasteTrace.log("⌘C -> \(copied ? "copied" : "nothing selected")")
+                // Nothing selected falls through, so ⌘C keeps whatever meaning
+                // it would otherwise have had.
+                if copied { return true }
+                return super.performKeyEquivalent(with: event)
+            }
+
             if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "v" {
                 PasteTrace.log("⌘V caught by performKeyEquivalent")
                 PasteTrace.log(TerminalClipboard.describePasteboard())
@@ -160,6 +178,12 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
     }
 
     private var menuTarget: ClipboardMenuTarget?
+    /// The view built for this pane.
+    ///
+    /// Selection used to be read through `surfaceState.surface`, which is a
+    /// weak reference; when it was nil, Copy reported no selection and the
+    /// menu item disabled itself. The view outlives the question.
+    private weak var platformView: MenuTerminalView?
 
     /// Turns the package's own input/output logging on when asked.
     ///
@@ -212,6 +236,7 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
             let view = MenuTerminalView(frame: .zero)
             view.menuTarget = target
             view.state = viewState
+            self.platformView = view
             return view
         }
 
@@ -287,12 +312,19 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         _ = surfaceState.controller.setTerminalConfiguration(config)
     }
 
+    /// Reading the selection copies it, because the view offers no way to
+    /// read without copying — and going through the weak surface reference is
+    /// what made Copy unavailable in the first place. The pasteboard is where
+    /// a copy was headed anyway.
     func engineSelection() -> String? {
-        guard let surface = surfaceState.surface, surface.hasSelection() else { return nil }
-        return surface.readSelection()
+        guard let view = platformView, view.copySelectedTextToPasteboard() else { return nil }
+        return NSPasteboard.general.string(forType: .string)
     }
 
-    var engineHasSelection: Bool { surfaceState.surface?.hasSelection() ?? false }
+    /// True unless we can prove otherwise. The surface reference this used to
+    /// ask is weak, and a nil there disabled Copy outright; an enabled Copy
+    /// with nothing selected merely does nothing.
+    var engineHasSelection: Bool { platformView != nil }
 
     /// No select-all in the package's surface API, so the menu leaves the item
     /// out rather than offering one that does nothing.
