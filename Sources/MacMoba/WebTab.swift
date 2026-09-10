@@ -75,7 +75,8 @@ final class WebTab: NSObject, ObservableObject, Identifiable {
                         sessions: chain.dropLast().map { $0 })
                     let forward = try await DynamicForward.start(
                         config: tunnel, session: resolvedVia, via: resolvedHops,
-                        hostKeys: app?.hostKeyVerification)
+                        hostKeys: app?.hostKeyVerification,
+                        overrides: HostOverrides.parse(config.hostOverrides ?? ""))
                     self.forward = forward
                     proxyPort = forward.localPort
                     self.proxyDescription = via.name

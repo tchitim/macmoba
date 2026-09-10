@@ -34,6 +34,7 @@ struct SessionEditView: View {
     @State private var useAllDisplays = false
     @State private var ftpSecurity: FTPSecurity = .plain
     @State private var webURL = ""
+    @State private var hostOverridesText = ""
     /// "custom" = this session's own inline fields; a credential id = that
     /// shared login; "inherit" = the group's default. See CredentialResolver.
     @State private var credentialRef = "custom"
@@ -132,6 +133,7 @@ struct SessionEditView: View {
          displayMode.rawValue, String(fixedWidth), String(fixedHeight),
          String(useAllDisplays), ftpSecurity.rawValue, webURL, credentialRef,
          colorTag.rawValue, tagsText, notes, onConnectCommands, expectText,
+         hostOverridesText,
          String(x11Forwarding), fallbackHostsText, String(serialBaud),
          serialFormat]
             .joined(separator: "\u{1F}")
@@ -301,6 +303,17 @@ struct SessionEditView: View {
                 // "via" session in Connection carries the traffic.
                 TextField("URL", text: $webURL,
                           prompt: Text("http://internal.corp:8080/status"))
+                VStack(alignment: .leading, spacing: 4) {
+                    TextEditor(text: $hostOverridesText)
+                        .frame(minHeight: 40)
+                        .font(.system(.callout, design: .monospaced))
+                    Text("Host overrides — `name = address`, one per line, for "
+                         + "a name nothing on the way can resolve. The name is "
+                         + "still what gets sent, so certificates and "
+                         + "name-based virtual hosts keep working.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else if kind == .serial {
                 serialDeviceField
             } else {
@@ -657,6 +670,7 @@ struct SessionEditView: View {
         useAllDisplays = s.rdpUseAllDisplays ?? false
         ftpSecurity = s.ftpSecurity
         webURL = s.webURL ?? ""
+        hostOverridesText = s.hostOverrides ?? ""
         // Normalise nil/"" to "custom" so the picker has a concrete selection.
         credentialRef = (s.credentialRef?.isEmpty == false) ? s.credentialRef! : "custom"
         colorTag = s.colorTag
@@ -779,6 +793,11 @@ struct SessionEditView: View {
         let sshLike = kind == .ssh || kind == .mosh
         config.x11Forwarding = (sshLike && x11Forwarding) ? true : nil
         // Comma-separated, trimmed, empties dropped — reuse the tag splitter.
+        // Kept in the typed form rather than the parsed one, so a line the
+        // parser skips is still in front of whoever typed it next time.
+        let trimmedOverrides = hostOverridesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.hostOverrides = (kind == .web && !trimmedOverrides.isEmpty)
+            ? hostOverridesText : nil
         let fallbacks = SessionSearch.normalizedTags(fallbackHostsText)
         config.fallbackHosts = (kind != .web && !fallbacks.isEmpty) ? fallbacks : nil
         // Serial settings, written only for a serial session.

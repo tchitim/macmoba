@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Host overrides for a web tab
+
+An internal name that neither this Mac nor the jump host can resolve now has an
+answer: **Host overrides** in a Web session, `name = address`, one per line.
+
+This is Chrome's `--host-resolver-rules` and it works the same way and for the
+same reason — the address is substituted only where the tunnel dials out, so
+the **name still travels**, and TLS certificates and name-based virtual hosts go
+on working. Typing the address into the URL instead breaks both.
+
+### Copy works again in a libghostty pane
+
+Copy asked a weak reference whether anything was selected. When that reference
+was nil the answer was "no", which disabled the menu item outright and took ⌘C
+with it. Nothing asks it now.
+
+
 Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
 entry here — release notes that can be forgotten are release notes nobody writes.

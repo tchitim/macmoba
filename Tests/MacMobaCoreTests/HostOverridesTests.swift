@@ -63,3 +63,45 @@ final class HostOverridesTests: XCTestCase {
         XCTAssertEqual(HostOverrides.parse(text).text, text)
     }
 }
+
+// MARK: - Stored on the session
+
+extension HostOverridesTests {
+    /// The rules survive a save/load, and survive it as TEXT.
+    ///
+    /// Storing the parsed map would quietly delete a line the parser skipped —
+    /// a typo would vanish from the box instead of sitting there to be fixed.
+    func testRulesRoundTripThroughTheVaultAsTypedText() throws {
+        var config = SessionConfig(name: "sim", host: "", port: 0, username: "")
+        config.kind = "web"
+        config.webURL = "https://cp-sim.dev.crp.iclnet2.hk/"
+        config.hostOverrides = "cp-sim.dev.crp.iclnet2.hk = 10.26.132.82\nnot a rule at all\n"
+
+        let data = try JSONEncoder().encode(config)
+        let back = try JSONDecoder().decode(SessionConfig.self, from: data)
+
+        XCTAssertEqual(back.hostOverrides, config.hostOverrides)
+        XCTAssertEqual(HostOverrides.parse(back.hostOverrides ?? "")
+            .resolve("cp-sim.dev.crp.iclnet2.hk"), "10.26.132.82")
+    }
+
+    /// A session with no rules produces the empty set, not a crash or a
+    /// map with one blank entry.
+    func testNoRulesIsEmpty() {
+        let config = SessionConfig(name: "plain", host: "h", port: 22, username: "u")
+        XCTAssertNil(config.hostOverrides)
+        XCTAssertTrue(HostOverrides.parse(config.hostOverrides ?? "").isEmpty)
+    }
+
+    /// Only the host being dialled is substituted. Everything else that
+    /// travels — and in particular the name the browser puts in SNI and the
+    /// Host header — is untouched, which is the entire reason this maps
+    /// instead of rewriting the URL.
+    func testOnlyTheDialledAddressChanges() {
+        let rules = HostOverrides.parse("cp-sim.dev.crp.iclnet2.hk = 10.26.132.82")
+        XCTAssertEqual(rules.resolve("cp-sim.dev.crp.iclnet2.hk"), "10.26.132.82")
+        // A different name on the same tunnel is left alone.
+        XCTAssertEqual(rules.resolve("other.dev.crp.iclnet2.hk"),
+                       "other.dev.crp.iclnet2.hk")
+    }
+}
