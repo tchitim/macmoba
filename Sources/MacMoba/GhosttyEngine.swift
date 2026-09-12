@@ -326,11 +326,13 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
     /// with nothing selected merely does nothing.
     var engineHasSelection: Bool { platformView != nil }
 
-    /// No select-all in the package's surface API, so the menu leaves the item
-    /// out rather than offering one that does nothing.
-    var engineCanSelectAll: Bool { false }
+    /// The package does have select-all; what it did not have was a reference
+    /// that survives. `AppTerminalView.selectAll` reaches the surface through
+    /// the coordinator, which OWNS it — unlike `TerminalViewState.surface`,
+    /// the weak mirror that went nil and disabled Copy.
+    var engineCanSelectAll: Bool { platformView != nil }
 
-    func engineSelectAll() {}
+    func engineSelectAll() { platformView?.selectAll(nil) }
 
     /// libghostty frames the paste itself — a program that asked for bracketed
     /// paste receives it framed — so this is one call where SwiftTerm needs

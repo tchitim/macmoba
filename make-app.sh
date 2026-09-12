@@ -37,18 +37,22 @@ VERSION=3.18
 
 # Which terminal engine a build defaults to.
 #
-# Empty unless GHOSTTY_DEFAULT=1 is passed, so a release can never ship the
-# libghostty default by accident — it takes a deliberate environment variable,
-# not a branch that someone has to remember to change back. Both branches keep
-# an identical script, which also means this never becomes another merge
-# conflict beside VERSION.
+# libghostty since 3.0, and the source default says so, so an ordinary build
+# needs nothing here. The plist entry is now the way to PIN a build to the
+# other engine — for bisecting a regression, or for handing someone a build
+# that behaves the way the old one did.
 #
-#   GHOSTTY_DEFAULT=1 ./make-app.sh --notarize    # local build, libghostty on
-#   ./make-app.sh --notarize                      # anything published
+#   ./make-app.sh --notarize                        # libghostty, the default
+#   SWIFTTERM_DEFAULT=1 ./make-app.sh               # pinned to SwiftTerm
 ENGINE_PLIST_ENTRY=""
-if [[ "${GHOSTTY_DEFAULT:-0}" == "1" ]]; then
+if [[ "${SWIFTTERM_DEFAULT:-0}" == "1" ]]; then
+  ENGINE_PLIST_ENTRY=$'\n    <key>MacMobaDefaultEngine</key>\n    <string>swiftterm</string>'
+  echo "Default terminal engine: SwiftTerm (SWIFTTERM_DEFAULT=1)"
+elif [[ "${GHOSTTY_DEFAULT:-0}" == "1" ]]; then
+  # Kept so the old invocation still does what it says rather than failing
+  # silently — it is in this repo's history, and in my shell history.
   ENGINE_PLIST_ENTRY=$'\n    <key>MacMobaDefaultEngine</key>\n    <string>ghostty</string>'
-  echo "Default terminal engine: libghostty (GHOSTTY_DEFAULT=1)"
+  echo "Default terminal engine: libghostty (GHOSTTY_DEFAULT=1; now the default anyway)"
 fi
 
 rm -rf "$APP"

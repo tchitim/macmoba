@@ -79,6 +79,16 @@ struct SettingsView: View {
                 Text("Applies to sessions opened from now on.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Picker("Engine", selection: $app.terminalUsesGhostty) {
+                    Text("libghostty").tag(true)
+                    Text("SwiftTerm").tag(false)
+                }
+                Text("libghostty is the faster parser and draws on the GPU. "
+                     + "SwiftTerm is what MacMoba shipped with before 3.0 and "
+                     + "is still here — switch back if something misbehaves. "
+                     + "Applies to terminals opened from now on.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("GPU rendering", isOn: $app.terminalMetalRenderer)
                 Text("Draws with Metal instead of CoreGraphics. Repaints only the lines that "
                      + "changed, which mainly helps when dragging a selection across a large "

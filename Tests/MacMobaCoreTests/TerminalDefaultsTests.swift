@@ -65,13 +65,22 @@ extension TerminalDefaultsTests {
         return stub
     }
 
-    /// A build that says nothing is SwiftTerm. This is what every published
-    /// release must be, and the reason the plist key is opt-in.
-    func testPlainBuildDefaultsToSwiftTerm() {
+    /// A build that says nothing is libghostty. That is the release default
+    /// as of 3.0; before it, the same silence meant SwiftTerm.
+    func testPlainBuildDefaultsToGhostty() {
         let defaults = UserDefaults(suiteName: "engine-plain")!
         defaults.removeObject(forKey: TerminalDefaults.engineKey)
+        XCTAssertTrue(TerminalDefaults.usesGhosttyEngine(from: defaults,
+                                                         bundle: bundleDeclaring(nil)))
+    }
+
+    /// A build can still be pinned to the old engine, which is how one gets
+    /// bisected without editing source.
+    func testBuildMayDeclareSwiftTerm() {
+        let defaults = UserDefaults(suiteName: "engine-pinned")!
+        defaults.removeObject(forKey: TerminalDefaults.engineKey)
         XCTAssertFalse(TerminalDefaults.usesGhosttyEngine(from: defaults,
-                                                          bundle: bundleDeclaring(nil)))
+                                                          bundle: bundleDeclaring("swiftterm")))
     }
 
     func testBuildMayDeclareGhostty() {
@@ -93,13 +102,19 @@ extension TerminalDefaultsTests {
                                                          bundle: bundleDeclaring(nil)))
     }
 
-    /// An unrecognised value is not ghostty. Only the one spelling turns it on.
-    func testUnknownDeclarationIsSwiftTerm() {
+    /// An unrecognised value falls to the default rather than to the other
+    /// engine. Only the one spelling pins a build back, so a typo in the build
+    /// script cannot quietly ship the engine nobody asked for.
+    func testUnknownDeclarationFallsToTheDefault() {
         let defaults = UserDefaults(suiteName: "engine-unknown")!
         defaults.removeObject(forKey: TerminalDefaults.engineKey)
+        for junk in ["", "swift-term", "SwiftTerm2", "no"] {
+            XCTAssertTrue(TerminalDefaults.usesGhosttyEngine(from: defaults,
+                                                             bundle: bundleDeclaring(junk)),
+                          "\(junk) should not pin the build to SwiftTerm")
+        }
+        // Spelling and case are the only things that matter.
         XCTAssertFalse(TerminalDefaults.usesGhosttyEngine(from: defaults,
-                                                          bundle: bundleDeclaring("swiftterm")))
-        XCTAssertFalse(TerminalDefaults.usesGhosttyEngine(from: defaults,
-                                                          bundle: bundleDeclaring("")))
+                                                          bundle: bundleDeclaring("SwiftTerm")))
     }
 }
