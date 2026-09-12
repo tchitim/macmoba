@@ -105,3 +105,60 @@ extension HostOverridesTests {
                        "other.dev.crp.iclnet2.hk")
     }
 }
+
+// MARK: - A port in the rule
+
+extension HostOverridesTests {
+    /// `name = address:port` moves both, the way Chrome's flag does.
+    func testARuleCanNameAPort() {
+        let rules = HostOverrides.parse("sim.internal = 10.26.132.82:8443")
+        let target = rules.resolve("sim.internal", port: 443)
+        XCTAssertEqual(target.host, "10.26.132.82")
+        XCTAssertEqual(target.port, 8443)
+    }
+
+    /// Without one, the port asked for is kept. This is the common case: the
+    /// service is where the URL says, only the name cannot be resolved.
+    func testWithoutAPortTheRequestedOneIsKept() {
+        let rules = HostOverrides.parse("sim.internal = 10.26.132.82")
+        XCTAssertEqual(rules.resolve("sim.internal", port: 8080).port, 8080)
+        XCTAssertEqual(rules.resolve("sim.internal", port: 443).port, 443)
+    }
+
+    /// A bare IPv6 literal is full of colons and none of them is a port.
+    /// Splitting on the last one would dial a truncated address.
+    func testABareIPv6LiteralIsNotSplit() {
+        let rules = HostOverrides.parse("sim.internal = fd00::1")
+        let target = rules.resolve("sim.internal", port: 443)
+        XCTAssertEqual(target.host, "fd00::1")
+        XCTAssertEqual(target.port, 443)
+    }
+
+    /// Brackets are what make the last colon a separator — the same rule a URL
+    /// follows, so there is nothing new to learn.
+    func testABracketedIPv6LiteralCanCarryAPort() {
+        let rules = HostOverrides.parse("sim.internal = [fd00::1]:8443")
+        let target = rules.resolve("sim.internal", port: 443)
+        XCTAssertEqual(target.host, "fd00::1")
+        XCTAssertEqual(target.port, 8443)
+    }
+
+    /// Something that is not a port is not treated as one. Reading "8443x" as
+    /// 8443 would dial somewhere the rule never named.
+    func testRubbishAfterTheColonIsNotAPort() {
+        for bad in ["10.0.0.1:8443x", "10.0.0.1:", "10.0.0.1:0", "10.0.0.1:99999"] {
+            let target = HostOverrides.parse("sim.internal = \(bad)")
+                .resolve("sim.internal", port: 443)
+            XCTAssertEqual(target.host, bad, "\(bad) should be left whole")
+            XCTAssertEqual(target.port, 443, "\(bad) should not change the port")
+        }
+    }
+
+    /// The text form round-trips, brackets and all, so editing a saved rule
+    /// shows what was saved.
+    func testTheTextFormRoundTrips() {
+        for rule in ["a = 10.0.0.1", "a = 10.0.0.1:8443", "a = [fd00::1]:8443"] {
+            XCTAssertEqual(HostOverrides.parse(rule).text, rule)
+        }
+    }
+}

@@ -148,6 +148,13 @@ against it, and a server hosting several sites picks between them by SNI and
 the `Host` header. Only the address dialled at the far end of the tunnel
 changes. The browser is never told, and goes on sending the name it was given.
 
+A rule may name a port too, for a service that does not sit where the URL
+says:
+
+```
+cp-sim.dev.crp.iclnet2.hk = 10.26.132.82:8443
+```
+
 `#` starts a comment, so a rule can be switched off without deleting it.
 
 

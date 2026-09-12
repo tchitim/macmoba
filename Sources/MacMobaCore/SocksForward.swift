@@ -198,12 +198,12 @@ public final class DynamicForward {
                     // SNI and the Host header. Rewriting the URL instead would
                     // break both — the certificate is issued to the name, and
                     // a server with several sites picks between them by it.
-                    let target = overrides.resolve(host)
+                    let target = overrides.resolve(host, port: port)
                     let (localGlue, sshGlue) = GlueHandler.matchedPair()
                     let promise = parent.eventLoop.makePromise(of: Channel.self)
                     let type = SSHChannelType.directTCPIP(.init(
-                        targetHost: target,
-                        targetPort: port,
+                        targetHost: target.host,
+                        targetPort: target.port,
                         originatorAddress: channel.remoteAddress
                             ?? (try! SocketAddress(ipAddress: "127.0.0.1", port: 0))
                     ))
