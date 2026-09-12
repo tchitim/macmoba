@@ -9,6 +9,7 @@
 // different SwiftTerm classes, so the logic lives here and each subclass is a
 // thin set of overrides.
 
+import Carbon.HIToolbox
 import AppKit
 import UniformTypeIdentifiers
 import MacMobaCore
@@ -584,5 +585,55 @@ final class ClipboardMenuTarget: NSObject {
         item.target = self
         item.isEnabled = enabled
         menu.addItem(item)
+    }
+}
+
+/// Records whether an input method is reached at all.
+///
+/// Shares `ghosttyDebugLog` and the log directory with `PasteTrace`, for the
+/// reason that one taught: unified logging showed nothing at all on the
+/// reporter's machine, so a trace that only reaches `os_log` is a trace nobody
+/// can read.
+enum IMETrace {
+    static var enabled: Bool { PasteTrace.enabled }
+
+    static var logURL: URL {
+        SessionLogger.directory.appendingPathComponent("MacMoba-IME.log")
+    }
+
+    /// What macOS believes the current keyboard input source is.
+    ///
+    /// The vendored key handler swallows a keystroke when this changes across
+    /// `interpretKeyEvents`, on the theory that the key was a layout switch.
+    /// Whether a third-party IME makes it change on every key is exactly the
+    /// kind of thing to measure rather than assume.
+    static var inputSourceID: String? {
+        guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
+              let raw = TISGetInputSourceProperty(source, kTISPropertyInputSourceID)
+        else { return nil }
+        return unsafeBitCast(raw, to: CFString.self) as String
+    }
+
+    static func describe(_ string: Any) -> String {
+        let text = (string as? NSAttributedString)?.string ?? (string as? String) ?? "?"
+        let scalars = text.unicodeScalars
+            .map { String(format: "U+%04X", $0.value) }
+            .joined(separator: " ")
+        return "\"\(text)\" (\(scalars))"
+    }
+
+    static func log(_ what: String) {
+        guard enabled else { return }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        guard let data = "\(stamp)  \(what)\n".data(using: .utf8) else { return }
+        try? FileManager.default.createDirectory(at: SessionLogger.directory,
+                                                 withIntermediateDirectories: true)
+        if let handle = try? FileHandle(forWritingTo: logURL) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: logURL)
+        }
     }
 }

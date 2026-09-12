@@ -52,6 +52,43 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
     /// package returns none there.
     private final class MenuTerminalView: GhosttyTerminal.TerminalView {
         weak var menuTarget: ClipboardMenuTarget?
+
+        // MARK: - Input-method trace
+        //
+        // A third-party IME (OpenVanilla) composes nothing here: the keys
+        // arrive as plain Latin letters, which means the IME is never given
+        // the chance rather than being given it and failing. Whether that is
+        // because this view is not the first responder, has no input context,
+        // or is simply never asked, is not something to deduce from reading —
+        // that approach cost six builds on the paste bug. These record it.
+
+        override func keyDown(with event: NSEvent) {
+            guard IMETrace.enabled else { return super.keyDown(with: event) }
+            let responder = window?.firstResponder
+            IMETrace.log("keyDown code=\(event.keyCode) "
+                + "chars=\(event.characters ?? "-") "
+                + "firstResponder=\(responder.map { "\(type(of: $0))" } ?? "nil") "
+                + "isThisView=\(responder === self) "
+                + "inputContext=\(inputContext == nil ? "NIL" : "present") "
+                + "source=\(IMETrace.inputSourceID ?? "?") "
+                + "marked=\(hasMarkedText())")
+            super.keyDown(with: event)
+            IMETrace.log("  after: source=\(IMETrace.inputSourceID ?? "?") "
+                + "marked=\(hasMarkedText())")
+        }
+
+        override func insertText(_ string: Any, replacementRange: NSRange) {
+            IMETrace.log("  insertText \(IMETrace.describe(string))")
+            super.insertText(string, replacementRange: replacementRange)
+        }
+
+        override func setMarkedText(_ string: Any, selectedRange: NSRange,
+                                    replacementRange: NSRange) {
+            IMETrace.log("  setMarkedText \(IMETrace.describe(string))")
+            super.setMarkedText(string, selectedRange: selectedRange,
+                                replacementRange: replacementRange)
+        }
+
         override func menu(for event: NSEvent) -> NSMenu? { menuTarget?.menu() }
         override func selectionContextMenu() -> NSMenu {
             menuTarget?.menu() ?? super.selectionContextMenu()
