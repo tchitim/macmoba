@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.1
+
+**A terminal that had lost keyboard focus now takes it back when you type.**
+Reported as a third-party input method (OpenVanilla) producing only Latin
+letters in a libghostty pane. The shape of that is telling: the keys arrive, so
+the pane is reachable — but an input method talks only to the window's first
+responder, and if that is something else, it is never given the chance to
+compose. A key reaching the terminal down the responder chain while something
+else holds focus is a broken state on its own, and it now corrects itself.
+
+The keystroke in hand is not rescued — it has already been dispatched, and
+re-sending it risks entering it twice — so the first character stays Latin and
+composition works from the second.
+
+Honest about what this is: the failure was intermittent and had already stopped
+reproducing before this was written, so this fixes the cause that fits the
+report rather than one seen in the act. It also adds a trace — off unless
+`defaults write dev.macmoba.MacMoba ghosttyDebugLog -bool YES` — that records
+the first responder and input context on every keystroke, so a recurrence can
+be read rather than guessed at.
+
 ## 3.0
 
 **libghostty draws the terminals now.** The engine behind Ghostty replaces

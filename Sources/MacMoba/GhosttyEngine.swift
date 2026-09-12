@@ -62,7 +62,31 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         // or is simply never asked, is not something to deduce from reading —
         // that approach cost six builds on the paste bug. These record it.
 
+        /// A key arriving here while something else holds first responder is
+        /// by itself a broken state, and the one that fits the input-method
+        /// report exactly: keys reach this view down the responder chain, so
+        /// letters appear, but an input method talks only to the first
+        /// responder, so it is never given the chance to compose.
+        ///
+        /// If a key got this far, nothing above consumed it — a focused text
+        /// field would have taken it and this method would not be running — so
+        /// taking focus here cannot be stealing it from anything live.
+        ///
+        /// This does not rescue the keystroke in hand: it has already been
+        /// dispatched, and re-sending it through the input context risks
+        /// entering it twice. The first character stays Latin and composition
+        /// works from the second. That is a poor look and still far better
+        /// than a pane that cannot type the language at all.
+        private func takeFocusIfMisplaced() {
+            guard let window, window.firstResponder !== self else { return }
+            let previous = window.firstResponder
+            let taken = window.makeFirstResponder(self)
+            IMETrace.log("first responder was \(previous.map { "\(type(of: $0))" } ?? "nil")"
+                + ", not this view — took it: \(taken)")
+        }
+
         override func keyDown(with event: NSEvent) {
+            takeFocusIfMisplaced()
             guard IMETrace.enabled else { return super.keyDown(with: event) }
             let responder = window?.firstResponder
             IMETrace.log("keyDown code=\(event.keyCode) "
