@@ -177,7 +177,8 @@ public final class DynamicForward {
         config: TunnelConfig,
         session: SessionConfig,
         via hops: [SessionConfig] = [],
-        hostKeys: HostKeyVerification? = nil
+        hostKeys: HostKeyVerification? = nil,
+        overrides: HostOverrides = HostOverrides()
     ) async throws -> DynamicForward {
         precondition(config.type == "dynamic", "DynamicForward requires type == dynamic")
         // Reach the gateway through its own bastion chain, if it has one.
@@ -190,11 +191,19 @@ public final class DynamicForward {
             .childChannelInitializer { local in
                 let handshake = SocksHandshakeHandler { channel, host, port in
                     // One direct-tcpip channel per SOCKS CONNECT.
+                    //
+                    // The address is substituted HERE and nowhere else, which
+                    // is the whole point: the client asked for a name, is
+                    // never told otherwise, and goes on sending that name in
+                    // SNI and the Host header. Rewriting the URL instead would
+                    // break both — the certificate is issued to the name, and
+                    // a server with several sites picks between them by it.
+                    let target = overrides.resolve(host, port: port)
                     let (localGlue, sshGlue) = GlueHandler.matchedPair()
                     let promise = parent.eventLoop.makePromise(of: Channel.self)
                     let type = SSHChannelType.directTCPIP(.init(
-                        targetHost: host,
-                        targetPort: port,
+                        targetHost: target.host,
+                        targetPort: target.port,
                         originatorAddress: channel.remoteAddress
                             ?? (try! SocketAddress(ipAddress: "127.0.0.1", port: 0))
                     ))

@@ -131,6 +131,21 @@ final class AppState: ObservableObject {
     /// sessions: switching renderer keeps every line and every selection, so
     /// there is nothing to lose by applying it live — and being able to flip it
     /// mid-drag is the whole point of having the setting.
+    /// Which engine new panes are drawn by.
+    ///
+    /// Written as an explicit Bool, which then outranks the build default
+    /// forever — deliberately. Someone who went back to SwiftTerm because
+    /// something broke should not be moved again by an update.
+    ///
+    /// Only new panes: an open terminal's engine is baked into the view it
+    /// already built, and swapping it under a live session would drop the
+    /// scrollback with it.
+    @Published var terminalUsesGhostty: Bool = TerminalDefaults.usesGhosttyEngine() {
+        didSet {
+            UserDefaults.standard.set(terminalUsesGhostty, forKey: TerminalDefaults.engineKey)
+        }
+    }
+
     @Published var terminalMetalRenderer: Bool = TerminalDefaults.usesMetalRenderer() {
         didSet {
             UserDefaults.standard.set(terminalMetalRenderer, forKey: TerminalDefaults.metalRendererKey)

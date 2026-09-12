@@ -10,6 +10,7 @@
 // thin set of overrides.
 
 import AppKit
+import UniformTypeIdentifiers
 import MacMobaCore
 import SwiftTerm
 
@@ -63,19 +64,104 @@ enum TerminalClipboard {
         NSPasteboard.general.string(forType: .string)
     }
 
-    /// PNG bytes when the clipboard holds an image and no text — a screenshot,
-    /// not a copied web selection (those carry both, and text wins).
-    static func clipboardImagePNG() -> Data? {
+    /// An image on the clipboard, with the extension to give it.
+    ///
+    /// Two shapes count. A copied image FILE — from Photos or Finder — arrives
+    /// as a file URL, and those bytes are sent as they are. A copied image
+    /// with no file behind it, such as a screenshot, arrives as raw data and
+    /// becomes PNG.
+    static func clipboardImage() -> (data: Data, fileExtension: String)? {
         let pasteboard = NSPasteboard.general
-        guard clipboardText()?.isEmpty != false else { return nil }
-        if let png = pasteboard.data(forType: .png) { return png }
+
+        // Files first, and BEFORE the text check below. A file on the
+        // pasteboard also carries its path as text, so that check rejected
+        // every copied picture and the path was pasted instead — a path on
+        // this Mac, which means nothing on the machine at the other end.
+        //
+        // The original bytes rather than a PNG conversion: re-encoding a
+        // photo's JPEG can multiply its size several times over, and this is
+        // about to go up an SSH connection.
+        if let url = imageFileOnPasteboard(pasteboard),
+           let data = try? Data(contentsOf: url) {
+            let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension.lowercased()
+            return (data, ext)
+        }
+
+        // A path written as plain text, with no file URL beside it.
+        //
+        // Copying a picture in Photos produces exactly this: the string is a
+        // path inside the photo library and there is no file URL to find, so
+        // the check above sees nothing and the path gets typed at the remote,
+        // where it names nothing. Narrow on purpose — one line, absolute, an
+        // existing file, and an image by content type — so ordinary text that
+        // happens to mention a path is still pasted as text.
+        let pathAsText = clipboardText().flatMap(imagePathWrittenAsText)
+        if let url = pathAsText {
+            if let data = try? Data(contentsOf: url) {
+                let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension.lowercased()
+                return (data, ext)
+            }
+            // Named an image and could not be opened. A photo library is
+            // protected by macOS privacy, so this is the likely everyday case
+            // — and falling through silently would paste the path again, which
+            // is the failure being fixed. The raw image data below is tried
+            // next, since a picture usually rides along with its path.
+            PasteTrace.log("image path on clipboard could not be read: \(url.path)")
+        }
+
+        // Raw image data. Normally only when there is no text — a copied web
+        // selection carries both and the text is what was meant — but text
+        // that is merely a path to a picture is not text anybody wants typed.
+        guard clipboardText()?.isEmpty != false || pathAsText != nil else { return nil }
+        if let png = pasteboard.data(forType: .png) { return (png, "png") }
         if let tiff = pasteboard.data(forType: .tiff),
            let rep = NSBitmapImageRep(data: tiff),
            let png = rep.representation(using: .png, properties: [:]) {
-            return png
+            return (png, "png")
         }
         return nil
     }
+
+    /// The first pasteboard file that is actually an image.
+    ///
+    /// Asked by content type rather than by extension, so a file named
+    /// without one, or named misleadingly, is judged by what it is.
+    private static func imageFileOnPasteboard(_ pasteboard: NSPasteboard) -> URL? {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self],
+                                                options: options) as? [URL] else { return nil }
+        return urls.first { url in
+            (try? url.resourceValues(forKeys: [.contentTypeKey]))?
+                .contentType?.conforms(to: .image) == true
+        }
+    }
+
+    /// A single absolute path naming an image file, or nil.
+    private static func imagePathWrittenAsText(_ text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.contains("\n"), trimmed.hasPrefix("/") else { return nil }
+        let url = URL(fileURLWithPath: trimmed)
+        guard let values = try? url.resourceValues(forKeys: [.contentTypeKey, .isRegularFileKey]),
+              values.isRegularFile == true,
+              values.contentType?.conforms(to: .image) == true else { return nil }
+        return url
+    }
+
+    /// Everything the pasteboard is offering, for when a paste does the wrong
+    /// thing and the reason is which flavour won.
+    static func describePasteboard() -> String {
+        let pb = NSPasteboard.general
+        let types = (pb.types ?? []).map(\.rawValue).joined(separator: ", ")
+        let text = pb.string(forType: .string)
+        let opts: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let urls = (pb.readObjects(forClasses: [NSURL.self], options: opts) as? [URL]) ?? []
+        return "types=[\(types)] "
+            + "string=\(text.map { "\"\($0.prefix(120))\"" } ?? "nil") "
+            + "fileURLs=\(urls.map(\.lastPathComponent))"
+    }
+
+    /// Kept for callers that only ask "is there a picture".
+    static func clipboardImagePNG() -> Data? { clipboardImage()?.data }
 
     /// Paste, asking first when the clipboard would run more than one command.
     /// The alert is a window sheet rather than `runModal()`: a global modal
@@ -101,10 +187,10 @@ enum TerminalClipboard {
         // direct `as? TerminalTab` this replaces had been quietly failing for
         // every pane since the wrapper was introduced.
         if allowImageUpload,
-           let tab = (view.terminalDelegate as? SwiftTermEngine)?.owner,
+           let tab = (view.terminalDelegate as? SwiftTermEngine)?.engineOwner,
            tab.config.sessionKind.authenticatesOverSSH,
-           let png = clipboardImagePNG() {
-            tab.pasteImageToRemote(png)
+           let image = clipboardImage() {
+            tab.pasteImageToRemote(image.data, fileExtension: image.fileExtension)
             return
         }
         // An image is on the clipboard, this path was allowed to upload it, and
@@ -112,17 +198,14 @@ enum TerminalClipboard {
         // like from the outside: nothing happened, no error, for months. Say it
         // rather than fall through in silence.
         if allowImageUpload, clipboardImagePNG() != nil,
-           (view.terminalDelegate as? SwiftTermEngine)?.owner == nil {
+           (view.terminalDelegate as? SwiftTermEngine)?.engineOwner == nil {
             NSLog("MacMoba: image paste ignored — no owning pane for this view")
         }
         guard let text = clipboardText(), !text.isEmpty else { return }
-        let summary = PasteGuard.inspect(text)
-        guard ClipboardPrefs.shared.warnMultilinePaste, summary.needsConfirmation,
-              let window = view.window else {
-            send(text, to: view)
-            return
-        }
-        confirm(text, summary: summary, window: window) { [weak view] choice in
+        // Through the shared decision, so both engines ask the same question.
+        // It was written twice for a while, which is how the libghostty pane
+        // came to have no confirmation at all.
+        confirmIfNeeded(text, window: view.window) { [weak view] choice in
             guard let view else { return }
             switch choice {
             case .paste: send(text, to: view)
@@ -153,6 +236,23 @@ enum TerminalClipboard {
     // MARK: Confirmation
 
     enum PasteChoice { case paste, oneLine, cancel }
+
+    /// The multi-line paste confirmation, for callers outside this file.
+    ///
+    /// The libghostty pane reaches it from its own key handler: ⌘V there is
+    /// caught on the view rather than routed through this app's paste, so
+    /// without this the guard against running several commands by accident
+    /// applied on one engine and not the other.
+    static func confirmIfNeeded(_ text: String, window: NSWindow?,
+                                completion: @escaping (PasteChoice) -> Void) {
+        let summary = PasteGuard.inspect(text)
+        guard ClipboardPrefs.shared.warnMultilinePaste, summary.needsConfirmation,
+              let window else {
+            completion(.paste)
+            return
+        }
+        confirm(text, summary: summary, window: window, completion: completion)
+    }
 
     private static func confirm(
         _ text: String,
@@ -367,9 +467,33 @@ enum PasteTrace {
         UserDefaults.standard.bool(forKey: "ghosttyDebugLog")
     }
 
+    /// Beside the session logs, because unified logging could not be relied
+    /// on to show any of this.
+    ///
+    /// Two rounds of diagnosis produced no output at all from `log show` on
+    /// the reporter's machine — not the app's lines, not even the ones the
+    /// terminal library emits — so a trace that only reaches os_log is a
+    /// trace nobody can read. A file is dull and it works.
+    static var logURL: URL {
+        SessionLogger.directory.appendingPathComponent("MacMoba-Paste.log")
+    }
+
     static func log(_ what: String) {
         guard enabled else { return }
         NSLog("ghostty: paste — %@", what)
+
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let line = "\(stamp)  \(what)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        try? FileManager.default.createDirectory(at: SessionLogger.directory,
+                                                 withIntermediateDirectories: true)
+        if let handle = try? FileHandle(forWritingTo: logURL) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: logURL)
+        }
     }
 }
 
@@ -385,6 +509,17 @@ enum PasteTrace {
 final class ClipboardMenuTarget: NSObject {
     private let engine: any TerminalEngineView
 
+    /// The pane, for the key-equivalent path that needs it directly.
+    var owningTab: TerminalTab? { engine.engineOwner }
+
+    /// Put text in as though it had been typed.
+    ///
+    /// The same route a keystroke takes, so it reaches a PTY or an SSH
+    /// connection without this needing to know which.
+    func sendAsInput(_ text: String) {
+        engine.engineOnInput?(ArraySlice(Array(text.utf8)))
+    }
+
     init(engine: any TerminalEngineView) {
         self.engine = engine
         super.init()
@@ -397,8 +532,20 @@ final class ClipboardMenuTarget: NSObject {
     }
 
     @objc func pasteClipboard(_ sender: Any?) {
+        PasteTrace.log(TerminalClipboard.describePasteboard())
+        // Images first, exactly as the SwiftTerm path does: a screenshot in an
+        // SSH pane is uploaded and its path typed, which is how an image is
+        // handed to an agent running over there. This branch was missing here,
+        // so pasting a picture into a libghostty pane did nothing whatsoever.
+        if let tab = engine.engineOwner,
+           tab.config.sessionKind.authenticatesOverSSH,
+           let image = TerminalClipboard.clipboardImage() {
+            PasteTrace.log("menu Paste: \(image.data.count) byte .\(image.fileExtension) -> upload")
+            tab.pasteImageToRemote(image.data, fileExtension: image.fileExtension)
+            return
+        }
         guard let text = TerminalClipboard.clipboardText(), !text.isEmpty else {
-            PasteTrace.log("menu Paste: clipboard held no text")
+            PasteTrace.log("menu Paste: clipboard held neither text nor an image")
             return
         }
         PasteTrace.log("menu Paste: \(text.count) chars to \(engine.engineName)")

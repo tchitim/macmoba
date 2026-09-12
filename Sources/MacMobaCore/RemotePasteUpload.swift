@@ -50,6 +50,13 @@ public enum RemotePasteFolder {
 public enum RemotePasteRetention {
     public static let defaultMaxAge: TimeInterval = 7 * 24 * 60 * 60
 
+    /// Extensions an upload can carry. Deliberately a list rather than "any
+    /// extension": this decides what gets deleted on someone else's machine,
+    /// and `paste-1.tar.gz` should survive whatever it is.
+    static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "heic", "heif", "tiff", "tif", "webp", "bmp",
+    ]
+
     /// Names safe to delete: ours, and older than `maxAge`.
     ///
     /// Deliberately narrow. Only `paste-<digits>.png` is considered — exactly
@@ -64,8 +71,16 @@ public enum RemotePasteRetention {
                                maxAge: TimeInterval = defaultMaxAge) -> [String] {
         let cutoff = now.timeIntervalSince1970 - maxAge
         return names.filter { name in
-            guard name.hasPrefix("paste-"), name.hasSuffix(".png") else { return false }
-            let digits = name.dropFirst("paste-".count).dropLast(".png".count)
+            // Any image extension, not just .png: a copied photo is uploaded
+            // with its own, and matching on .png alone would leave every one
+            // of those to accumulate forever — the exact leak the retention
+            // window exists to stop.
+            guard name.hasPrefix("paste-") else { return false }
+            let stem = name.dropFirst("paste-".count)
+            guard let dot = stem.lastIndex(of: "."),
+                  imageExtensions.contains(stem[stem.index(after: dot)...].lowercased())
+            else { return false }
+            let digits = stem[stem.startIndex..<dot]
             guard !digits.isEmpty, digits.allSatisfy(\.isNumber),
                   let stamp = TimeInterval(digits) else { return false }
             return stamp < cutoff

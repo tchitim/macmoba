@@ -76,12 +76,20 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
             switch item.action {
             case Selector(("paste:")):
+                // An image counts: it is pasteable here even though it is not
+                // text, and validating on text alone would grey out ⌘V for
+                // exactly the screenshot case this pane needs most.
                 let has = NSPasteboard.general.canReadObject(
                     forClasses: [NSString.self], options: nil)
-                PasteTrace.log("validate paste: -> \(has ? "enabled" : "no text on clipboard")")
+                    || TerminalClipboard.clipboardImagePNG() != nil
+                PasteTrace.log("validate paste: -> \(has ? "enabled" : "clipboard empty")")
                 return has
             case Selector(("copy:")):
-                return state?.surface?.hasSelection() ?? false
+                // Always enabled, rather than asking `state.surface` — that is
+                // a WEAK reference, and when it is nil this returned false and
+                // left Copy permanently greyed out. Copy with no selection is
+                // a harmless no-op; a Copy that can never be pressed is not.
+                return true
             case Selector(("selectAll:")):
                 // The action exists on the view but the surface API behind it
                 // does nothing, so an enabled item would be a lie.
@@ -92,9 +100,90 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
                 return true
             }
         }
+
+        /// Catch ⌘V on the view, without going through the menu at all.
+        ///
+        /// The trace settled this: AppKit asked whether Paste applied, was
+        /// told yes, and then never called `paste(_:)` here. The menu's action
+        /// goes somewhere else, so everything downstream of it was unreachable
+        /// no matter how the clipboard was read — which is why three attempts
+        /// at reading the clipboard differently all changed nothing.
+        ///
+        /// A key equivalent on the view does not depend on which responder the
+        /// menu hands its action to. Only plain ⌘V: ⇧⌘V is Paste as One Line
+        /// and stays with the app's own menu item.
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "c" {
+                // On the view for the same reason as ⌘V below: the menu's
+                // action does not arrive here. `copySelectedTextToPasteboard`
+                // belongs to the view, which is certainly alive — this method
+                // is running on it — rather than to the weak surface reference
+                // that was making Copy look unavailable.
+                let copied = copySelectedTextToPasteboard()
+                PasteTrace.log("⌘C -> \(copied ? "copied" : "nothing selected")")
+                // Nothing selected falls through, so ⌘C keeps whatever meaning
+                // it would otherwise have had.
+                if copied { return true }
+                return super.performKeyEquivalent(with: event)
+            }
+
+            if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "v" {
+                PasteTrace.log("⌘V caught by performKeyEquivalent")
+                PasteTrace.log(TerminalClipboard.describePasteboard())
+
+                // A picture goes to the remote as a file, which is this app's
+                // job and nothing the terminal could do.
+                if let tab = menuTarget?.owningTab,
+                   tab.config.sessionKind.authenticatesOverSSH,
+                   let image = TerminalClipboard.clipboardImage() {
+                    PasteTrace.log("⌘V: \(image.data.count) byte .\(image.fileExtension) -> upload")
+                    tab.pasteImageToRemote(image.data, fileExtension: image.fileExtension)
+                    return true
+                }
+
+                // Multi-line text is confirmed first, the same as on a
+                // SwiftTerm pane. The guard exists so a clipboard holding
+                // several commands cannot run them by being pasted, and it
+                // should not depend on which library is drawing.
+                let text = TerminalClipboard.clipboardText() ?? ""
+                TerminalClipboard.confirmIfNeeded(text, window: window) { [weak self] choice in
+                    guard let self else { return }
+                    switch choice {
+                    case .paste:
+                        // libghostty's own paste, not this app's send-text
+                        // call: routing it the other way is what broke plain
+                        // text once already, and the binding applies the
+                        // bracketed-paste framing a shell expects.
+                        let sent = self.performBindingAction("paste_from_clipboard")
+                        PasteTrace.log("⌘V: text via paste_from_clipboard -> "
+                                       + "\(sent ? "sent" : "REFUSED")")
+                    case .oneLine:
+                        // Sent as input rather than through the clipboard,
+                        // because the clipboard still holds the original. Safe
+                        // to send raw: the newlines are exactly what has been
+                        // taken out, so there is nothing for bracketed paste
+                        // to protect against.
+                        let line = PasteGuard.singleLine(text)
+                        self.menuTarget?.sendAsInput(line)
+                        PasteTrace.log("⌘V: \(line.count) chars as one line")
+                    case .cancel:
+                        PasteTrace.log("⌘V: cancelled at the confirmation")
+                    }
+                }
+                return true
+            }
+            return super.performKeyEquivalent(with: event)
+        }
     }
 
     private var menuTarget: ClipboardMenuTarget?
+    /// The view built for this pane.
+    ///
+    /// Selection used to be read through `surfaceState.surface`, which is a
+    /// weak reference; when it was nil, Copy reported no selection and the
+    /// menu item disabled itself. The view outlives the question.
+    private weak var platformView: MenuTerminalView?
 
     /// Turns the package's own input/output logging on when asked.
     ///
@@ -147,6 +236,7 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
             let view = MenuTerminalView(frame: .zero)
             view.menuTarget = target
             view.state = viewState
+            self.platformView = view
             return view
         }
 
@@ -163,6 +253,8 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
     var engineView: NSView { hosting }
 
     var engineName: String { "libghostty" }
+
+    weak var engineOwner: TerminalTab?
 
     func engineFeed(_ bytes: ArraySlice<UInt8>) { session.receive(Data(bytes)) }
 
@@ -220,18 +312,27 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         _ = surfaceState.controller.setTerminalConfiguration(config)
     }
 
+    /// Reading the selection copies it, because the view offers no way to
+    /// read without copying — and going through the weak surface reference is
+    /// what made Copy unavailable in the first place. The pasteboard is where
+    /// a copy was headed anyway.
     func engineSelection() -> String? {
-        guard let surface = surfaceState.surface, surface.hasSelection() else { return nil }
-        return surface.readSelection()
+        guard let view = platformView, view.copySelectedTextToPasteboard() else { return nil }
+        return NSPasteboard.general.string(forType: .string)
     }
 
-    var engineHasSelection: Bool { surfaceState.surface?.hasSelection() ?? false }
+    /// True unless we can prove otherwise. The surface reference this used to
+    /// ask is weak, and a nil there disabled Copy outright; an enabled Copy
+    /// with nothing selected merely does nothing.
+    var engineHasSelection: Bool { platformView != nil }
 
-    /// No select-all in the package's surface API, so the menu leaves the item
-    /// out rather than offering one that does nothing.
-    var engineCanSelectAll: Bool { false }
+    /// The package does have select-all; what it did not have was a reference
+    /// that survives. `AppTerminalView.selectAll` reaches the surface through
+    /// the coordinator, which OWNS it — unlike `TerminalViewState.surface`,
+    /// the weak mirror that went nil and disabled Copy.
+    var engineCanSelectAll: Bool { platformView != nil }
 
-    func engineSelectAll() {}
+    func engineSelectAll() { platformView?.selectAll(nil) }
 
     /// libghostty frames the paste itself — a program that asked for bracketed
     /// paste receives it framed — so this is one call where SwiftTerm needs

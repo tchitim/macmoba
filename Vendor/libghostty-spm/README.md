@@ -62,6 +62,17 @@ GhosttyTerminalTab.init()
 
 這一項讓 MacMoba 的 ⌘F 和 `read-screen` 在兩個引擎上看到同樣多的內容。
 
+## 第三個改動:`paste(_:)` 開放覆寫
+
+`AppTerminalView+Input.swift` 的 `@IBAction func paste(_:)` 原本是 internal,
+所以宿主沒辦法接手 ⌘V。它自己只處理文字——而 MacMoba 的貼上還要做兩件它不可能知道的事:
+把截圖上傳到遠端並把路徑打進提示字元(這是把圖片交給遠端 agent 的方式),
+以及多行文字的確認對話框。改成 `open` 之後,`MacMoba/GhosttyEngine.swift` 的
+`MenuTerminalView` 覆寫它並轉給 App 自己的貼上邏輯。
+
+**這個 bug 的形狀值得記著**:libghostty 變成預設引擎之後,貼圖片變成完全沒有反應——
+沒有錯誤、沒有記錄,因為那條路徑從來只存在於 SwiftTerm 的子類別裡。
+
 ## 怎麼驗
 
 ```bash

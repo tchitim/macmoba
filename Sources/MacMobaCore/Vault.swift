@@ -210,6 +210,14 @@ public struct SessionConfig: Codable, Equatable, Identifiable, Sendable {
     /// Commands typed into the shell automatically once a terminal session
     /// connects — a startup script (cd somewhere, tail a log, attach tmux).
     /// One command per line. Terminal kinds only; optional for back-compat.
+    /// Name-to-address rules for a web session's tunnel, one per line.
+    ///
+    /// For an internal host that neither this Mac nor the jump host can
+    /// resolve. On the web session rather than the jump host it goes through,
+    /// because that is the one being edited by the person who just watched the
+    /// page fail to load.
+    public var hostOverrides: String?
+
     public var onConnectCommands: String?
     /// Baud rate for a serial session (the device path lives in `host`). Default
     /// 9600 when absent. Optional, back-compat.

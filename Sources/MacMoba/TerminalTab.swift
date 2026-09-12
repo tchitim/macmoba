@@ -103,7 +103,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         super.init()
         // So the clipboard can find this tab from the view again; see
         // SwiftTermEngine.owner.
-        (engine as? SwiftTermEngine)?.owner = self
+        engine.engineOwner = self
         wireEngine()
         applyFont(size: app.terminalFontSize)
         engine.engineApplyTheme(app.theme)
@@ -456,7 +456,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
     /// the prompt — nothing is "run": the user keeps composing (for an agent,
     /// usually) and presses Return themselves.
     @MainActor
-    func pasteImageToRemote(_ png: Data) {
+    func pasteImageToRemote(_ png: Data, fileExtension: String = "png") {
         guard state == .connected else {
             postStatus("Not connected — image not uploaded.", isError: true)
             return
@@ -467,7 +467,7 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
             do {
                 let route = try await resolvedRoute()
                 let path = try await RemotePasteUpload.upload(
-                    data: png, fileName: "paste-\(stamp).png",
+                    data: png, fileName: "paste-\(stamp).\(fileExtension)",
                     config: route.config, jumps: route.jumps,
                     hostKeys: app?.hostKeyVerification)
                 await MainActor.run {

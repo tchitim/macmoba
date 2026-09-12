@@ -128,6 +128,36 @@ Point your browser's SOCKS5 setting at `127.0.0.1:1080`.
 > ⚠️ **macOS does something that misleads people here**: it bypasses the proxy entirely for **loopback and for addresses on your own subnet**. So some addresses connect directly however carefully the tunnel is configured. MacMoba says so plainly — the toolbar turns orange and reads `not via bastion`, rather than showing a "via the bastion" badge that is not true.
 
 
+### Names nothing on the way can resolve
+
+Some internal hostnames exist only in a DNS server that neither your Mac nor
+the jump host can reach. The page then fails before the tunnel is even used —
+there is no address to connect to.
+
+Chrome has a flag for exactly this,
+`--host-resolver-rules="MAP name 10.0.0.1"`. A Web session has the same thing
+built in: **Host overrides**, under the URL, one rule per line.
+
+```
+cp-sim.dev.crp.iclnet2.hk = 10.26.132.82
+```
+
+The reason this *maps* rather than letting you simply type the address into the
+URL is that the **name still has to travel**: TLS checks the certificate
+against it, and a server hosting several sites picks between them by SNI and
+the `Host` header. Only the address dialled at the far end of the tunnel
+changes. The browser is never told, and goes on sending the name it was given.
+
+A rule may name a port too, for a service that does not sit where the URL
+says:
+
+```
+cp-sim.dev.crp.iclnet2.hk = 10.26.132.82:8443
+```
+
+`#` starts a comment, so a rule can be switched off without deleting it.
+
+
 ### Internal consoles with self-signed certificates
 
 Internal sites are rarely signed by a public CA. An OpenShift console, a Cockpit,

@@ -121,7 +121,11 @@
             _ = copySelectedTextToPasteboard()
         }
 
-        @IBAction func paste(_: Any?) {
+        /// LOCAL PATCH: `open` so a host can route ⌘V through its own paste.
+        /// See Vendor/libghostty-spm/README.md — MacMoba's paste uploads a
+        /// screenshot to the remote and confirms multi-line text, neither of
+        /// which this can know about.
+        @IBAction open func paste(_: Any?) {
             if let text = NSPasteboard.general.string(forType: .string) {
                 TerminalDebugLog.log(
                     .input,
