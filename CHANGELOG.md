@@ -1,23 +1,34 @@
 # Changelog
 
-## Unreleased
+## 3.0
 
-### Host overrides for a web tab
+**libghostty draws the terminals now.** The engine behind Ghostty replaces
+SwiftTerm as the default. It parses faster — 2.3x into a local shell — though
+it is worth being plain about where that shows up: over a real SSH link the
+difference was not measurable at all, because the network runs out long before
+either parser does. The win is local shells, serial consoles, and anything that
+dumps a lot of output at once.
 
-An internal name that neither this Mac nor the jump host can resolve now has an
-answer: **Host overrides** in a Web session, `name = address`, one per line.
+**SwiftTerm is still here**, in Settings ▸ Appearance ▸ Engine, and is not
+deprecated. If something misbehaves, switch back; your choice then outranks the
+default permanently, and no update will move you again. The change applies to
+terminals opened from now on — an open terminal keeps the engine it was built
+with, because swapping it would take the scrollback with it.
 
-This is Chrome's `--host-resolver-rules` and it works the same way and for the
-same reason — the address is substituted only where the tunnel dials out, so
-the **name still travels**, and TLS certificates and name-based virtual hosts go
-on working. Typing the address into the URL instead breaks both.
+What this fixes, compared with 2.30's opt-in version: ⌘F and screen-reading now
+cover the whole scrollback rather than just the visible screen, themes apply,
+Select All works, ⌘V pastes text and images, ⌘T opens a tab instead of being
+eaten by the terminal, and mouse tracking no longer sticks on after a program
+that enabled it exits.
 
-### Copy works again in a libghostty pane
+**Host overrides for a web tab.** An internal name that neither your Mac nor
+the jump host can resolve now has an answer: `name = address`, one per line,
+under the URL in a Web session. A port may be included — `name = 10.0.0.1:8443`.
 
-Copy asked a weak reference whether anything was selected. When that reference
-was nil the answer was "no", which disabled the menu item outright and took ⌘C
-with it. Nothing asks it now.
-
+This is Chrome's `--host-resolver-rules`, and it works the same way for the same
+reason: only the address dialled at the far end of the tunnel changes, so the
+**name still travels**, and TLS certificates and name-based virtual hosts go on
+working. Typing the address into the URL instead breaks both.
 
 Newest first. Each release published to GitHub takes its notes from the section
 matching its version, and `make-app.sh` refuses to publish a version that has no
