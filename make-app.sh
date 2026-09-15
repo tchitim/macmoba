@@ -33,7 +33,7 @@ swift build -c release
 
 APP=MacMoba.app
 BIN=.build/release/MacMoba
-VERSION=3.1
+VERSION=3.2
 
 # Which terminal engine a build defaults to.
 #

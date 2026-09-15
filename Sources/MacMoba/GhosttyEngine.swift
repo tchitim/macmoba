@@ -244,7 +244,21 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
     /// Selection used to be read through `surfaceState.surface`, which is a
     /// weak reference; when it was nil, Copy reported no selection and the
     /// menu item disabled itself. The view outlives the question.
-    private weak var platformView: MenuTerminalView?
+    /// The terminal view, held STRONGLY and reused.
+    ///
+    /// This is where the screen lives. SwiftUI calls `makePlatformView` on
+    /// every mount of the representable, and re-parenting the hosting view —
+    /// which is what switching tabs does — is a remount. Building a fresh view
+    /// there builds a fresh surface, and a fresh surface has an empty screen:
+    /// switch away from an SSH session, come back, and everything that had
+    /// scrolled past is gone while the connection itself is still fine.
+    ///
+    /// Weak was wrong for the same reason. The only strong owner of the view
+    /// was the view hierarchy, so leaving it took the surface with it.
+    ///
+    /// The engine outlives every mount, so it is the right owner: one view and
+    /// one surface for the life of the pane, whatever SwiftUI does above it.
+    private var platformView: MenuTerminalView?
 
     /// Turns the package's own input/output logging on when asked.
     ///
@@ -293,11 +307,16 @@ final class GhosttyEngine: NSObject, TerminalEngineView {
         let target = ClipboardMenuTarget(engine: self)
         menuTarget = target
         let viewState = surfaceState
-        surfaceState.makePlatformView = {
+        // `[weak self]` because this closure is stored on `surfaceState`,
+        // which the engine owns — capturing strongly is a cycle, and the
+        // engine holding a pane's terminal open forever is how a closed tab
+        // keeps its SSH connection.
+        surfaceState.makePlatformView = { [weak self] in
+            if let existing = self?.platformView { return existing }
             let view = MenuTerminalView(frame: .zero)
             view.menuTarget = target
             view.state = viewState
-            self.platformView = view
+            self?.platformView = view
             return view
         }
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.2
+
+**Switching away from a terminal tab and back no longer empties it.** In a
+libghostty pane the screen and its scrollback were lost — the connection stayed
+up, the title stayed right, and everything that had scrolled past was gone.
+
+The pane's view was being rebuilt from scratch every time SwiftUI remounted it,
+and switching tabs is a remount. A new view means a new terminal surface, and a
+new surface starts empty. The view is now created once and kept for the life of
+the pane, which is where the screen actually lives.
+
 ## 3.1
 
 **A terminal that had lost keyboard focus now takes it back when you type.**
