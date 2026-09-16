@@ -74,8 +74,19 @@ final class TransferPaneModel: ObservableObject {
         items = FileSort.sort(unsorted, by: sortKey, ascending: ascending)
     }
 
+    /// Connect, or — if already connected — re-list.
+    ///
+    /// This runs when the panel appears, and it used to return early whenever
+    /// a service existed, which meant a panel shown a second time kept the
+    /// listing it had the first time. Reverting a VM snapshot under it left
+    /// the old files on screen, looking current, with nothing to say they were
+    /// not. A directory listing is a snapshot of something somebody else can
+    /// change; showing one indefinitely is asserting something we cannot know.
     func start() {
-        guard service == nil else { return }
+        guard service == nil else {
+            refresh()
+            return
+        }
         state = .connecting
         Task {
             do {
@@ -98,7 +109,14 @@ final class TransferPaneModel: ObservableObject {
     }
 
     func load(_ newPath: String) async {
-        guard let service else { return }
+        guard let service else {
+            // Silently keeping the old rows here is how a disconnected panel
+            // goes on looking live.
+            errorMessage = "Not connected."
+            unsorted = []
+            resort()
+            return
+        }
         do {
             let resolved = try await service.realpath(newPath)
             let listing = try await service.list(resolved)
@@ -110,7 +128,14 @@ final class TransferPaneModel: ObservableObject {
             // holds those names.
             selection = selection.intersection(Set(items.map(\.name)))
         } catch {
+            // Clear rather than leave what was listed before. Stale rows are
+            // worse than none: they name files that may be gone, and acting on
+            // one fails in a way that reads as MacMoba being broken rather
+            // than the listing being old.
             errorMessage = error.localizedDescription
+            unsorted = []
+            resort()
+            selection = []
         }
     }
 

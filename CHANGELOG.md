@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.3
+
+**A file panel shown again now re-lists, instead of showing what it saw last
+time.** Reverting a VM snapshot underneath one left the old files on screen,
+looking current, with nothing to say they were not. Both the two-pane transfer
+panel and the file browser connected once and then kept that listing for as
+long as the connection lasted.
+
+**A listing that fails to load now clears.** It used to leave the previous rows
+in place, so a panel that had lost its connection went on looking live. Stale
+rows are worse than none: they name files that may be gone, and acting on one
+fails in a way that reads as MacMoba being broken rather than the listing being
+old.
+
 ## 3.2
 
 **Switching away from a terminal tab and back no longer empties it.** In a

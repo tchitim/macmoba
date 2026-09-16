@@ -140,8 +140,14 @@ final class SFTPBrowserModel: ObservableObject {
             ?? !key.prefersDescending
     }
 
+    /// Connect, or — if already connected — re-list. See the same method on
+    /// the transfer panel: a listing shown a second time must be fetched a
+    /// second time, because the directory belongs to someone else.
     func start() {
-        guard client == nil else { return }
+        guard client == nil else {
+            Task { await load(path) }
+            return
+        }
         state = .connecting
         Task {
             do {
@@ -332,8 +338,13 @@ final class SFTPBrowserModel: ObservableObject {
             resort()
             selection = nil
         } catch {
+            // Cleared, not left standing — stale rows name files that may be
+            // gone, and acting on one reads as MacMoba being broken.
             errorMessage = "\(error)"
             pathField = path
+            unsorted = []
+            resort()
+            selection = nil
         }
     }
 
