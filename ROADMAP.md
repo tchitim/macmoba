@@ -42,7 +42,60 @@
 
 ### 高價值（日常會用到）
 
-（清空了）
+（清空了——下一輪見下方改善計畫）
+
+### 📐 下一輪：改善計畫（借鑑 KKTerm 研究，2026-09-17）
+
+研究對象 [ryantsai/KKTerm](https://github.com/ryantsai/KKTerm)（分析報告見 artifact）。
+只拿**貼合現有架構**的部分；他們的廣度（IPAM、模組系統、內建 assistant、跨平台）不拿，
+理由寫在報告裡。排序依「現有程式碼已完成的比例」。
+
+**v3.4 — MCP server、量測基線、不變量**
+
+1. **`macmoba mcp` 子指令**：對外講 stdio JSON-RPC（`initialize` / `tools/list` /
+   `tools/call`），對內轉發到既有的 control.sock——KKTerm 的 `kkterm-cli` 證明了
+   一模一樣的架構可行。CLI 維持 dependency-free（手寫 JSON-RPC，跟現在的 socket
+   client 同一個精神）。註冊方式：`claude mcp add macmoba -- macmoba mcp`。
+   - 工具分兩級：**唯讀**（`list_tabs`、`read_screen`）直接開；
+     **會打字的**（`send_text`）躲在 Settings「Allow agents to type into terminals」
+     後面，**預設關**，關著時回傳的錯誤要說明去哪裡打開。
+     `open_session` / `open_url` / `notify` 算中間級，跟著 server 開關走。
+   - 測試：JSON-RPC framing 單元測試＋對假 socket 的整合測試。
+2. **`measure.sh` 量測腳本**（KKTerm 的效能預算是數字不是形容詞：冷啟動 ≤500ms、
+   開本機分頁 ≤100ms、SSH 認證後就緒 ≤150ms，只量 release build）：
+   - 冷啟動 = `open` 到 `macmoba ping` 回應；開分頁 = `open` 指令到 state connected；
+     SSH 就緒 = app 內只量認證完成後那段（timing 進 log，腳本解析）。
+   - **先量基線再訂預算**（訂在現值上方一點，之後收緊），寫進 STATUS.md，
+     每次 release 前跑一次——回歸要變成「事件」，不是「漂移」。
+3. **STATUS.md 加「不變量」節**，句子要能拿著 diff 對：切換分頁**不得**斷開或
+   重建活著的 session（3.0 出過、3.2 才修）；主執行緒不做無界工作；秘密不進
+   log 也不進 vault 明文；引擎功能一律走**被持有**的參考，不走 weak 鏡像
+   （3.14／3.15／3.2 同一根因三次）。
+
+**v3.5 — tmux 與 Follow**
+
+4. **Per-session tmux**：SSH 類編輯器加「Run inside tmux」開關（預設關）。
+   啟動指令 `command -v tmux >/dev/null && exec tmux new-session -A -s <名> || exec sh -l`
+   ——遠端沒裝 tmux 就**安靜退回一般 shell**，不能整條 channel 死掉。
+   session 名要**穩定**（`mm-<slug>-<pane 序>`）重接才接得回；channel **非使用者
+   主動**關閉時無聲重連一次（重用既有 reconnect 機制，`-A` 讓重接自動發生）。
+   KKTerm 的邊界劃法照抄：只救傳輸層，不對抗主動關閉，非 tmux 不自動重啟。
+   Mosh 救網路，tmux 救 client——兩個是互補不是重複。
+5. **SFTP 瀏覽器右鍵「Follow」**：對檔案開一個同 tab 的 pane，用已連著的 session
+   跑 `tail -n 100 -f <path>`。重用 on-connect command 和 dead-shell UX（Esc 關），
+   幾乎沒有新機制。
+
+**v3.6 — 批次執行（縮小範圍版）**
+
+6. **Tools ▸ Batch Run**：勾選 saved SSH sessions（資料夾可全選、記住上次選擇）、
+   多行指令、並發上限 4（`runCommand` ＋ jump chain 都是現成的）。
+   逐主機一列：queued / running / ok / failed ＋ 即時輸出尾巴；可取消。
+   跑完寫 `~/Documents/MacMoba Logs/batch/<時間戳>.md`——**append-only**，
+   面板可回看歷史。報告存主機**名稱**不存 id（KKTerm 的 soft-reference 原則：
+   主機刪了，紀錄還讀得到）。
+   - KKTerm 模型裡值得守住的一句：**Task 擁有「跑什麼」，永遠不擁有目標**。
+   - 不做：WinRM / PsExec（他們的 Windows 市場）。之後再說：具名目標集合
+     （現階段資料夾＋tag 就夠）、expect/send playbook（既有 expect 引擎可重用）。
 
 ~~FTP / FTPS~~ ✅ **做好了**：session 種類多了 FTP，開起來是**一個純檔案瀏覽器分頁**
 （沒有終端機——FTP 本來就沒有 shell）。用的是跟 SFTP 同一個面板：上傳、下載、
