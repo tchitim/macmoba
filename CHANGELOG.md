@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.5.2
+
+**tmux is found even when it is not on the default PATH.** Turning on "Run
+inside tmux" did nothing on many servers: SSH runs the launch command in a
+non-login shell whose PATH is the bare system default, so a tmux installed by
+Homebrew (`/opt/homebrew/bin`, `/usr/local/bin`) was invisible to the probe and
+the session quietly fell back to a plain shell — tmux looked broken though it
+was installed, and a chosen session name never attached. The probe now runs
+through a login shell, so your profile has set PATH before "is tmux installed?"
+is asked.
+
 ## 3.5.1
 
 **Choose which tmux session to attach to.** "Run inside tmux" now has a

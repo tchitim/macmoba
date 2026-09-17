@@ -67,6 +67,15 @@ public enum TmuxLaunch {
     /// probing shell so no extra process lingers; on failure `exec` the login
     /// shell, so a remote without tmux still gets exactly what it got before
     /// this feature existed. `$SHELL` is preferred, `sh -l` the floor.
+    ///
+    /// The probe MUST run under a login shell. sshd delivers this through an
+    /// exec channel, i.e. a NON-login shell whose PATH is the bare system
+    /// default (`/usr/bin:/bin:/usr/sbin:/sbin`). A tmux installed by Homebrew
+    /// (`/opt/homebrew/bin`, `/usr/local/bin`) is then not on PATH, so
+    /// `command -v tmux` reports it missing and the session silently falls back
+    /// to a plain shell — tmux looks broken though it is installed. So re-exec
+    /// through `$SHELL -lc` first: the user's profile sets PATH before the
+    /// probe runs, and only then is "is tmux installed" an honest question.
     public static func launchCommand(enabled: Bool,
                                      sessionID: String,
                                      paneIndex: Int,
@@ -74,10 +83,15 @@ public enum TmuxLaunch {
         guard enabled else { return nil }
         let name = resolvedName(explicit: explicitName, sessionID: sessionID,
                                 paneIndex: paneIndex)
-        // Single-quoted for the remote sh -c; the name has no quotes to escape
-        // (sessionName guarantees it), but keep the form defensive anyway.
-        return "command -v tmux >/dev/null 2>&1 && "
-            + "exec tmux new-session -A -s '\(name)' || "
+        // Double-quoted for the login shell; the name has no quotes, `$` or
+        // backtick to escape (sessionName/resolvedName guarantee it), so it is
+        // also safe to sit inside the single-quoted `-lc` body below.
+        let inner = "command -v tmux >/dev/null 2>&1 && "
+            + "exec tmux new-session -A -s \"\(name)\" || "
             + "exec \"${SHELL:-/bin/sh}\" -l"
+        // Single-quoted body for the outer (non-login) remote shell, so it
+        // reaches the login shell verbatim; the login shell then expands the
+        // `${SHELL}` and probes tmux with the profile's PATH in place.
+        return "exec \"${SHELL:-/bin/sh}\" -lc '\(inner)'"
     }
 }

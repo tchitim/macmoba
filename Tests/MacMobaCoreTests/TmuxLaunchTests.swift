@@ -52,11 +52,28 @@ final class TmuxLaunchTests: XCTestCase {
         // create with -A, and fall back to a login shell so a remote without
         // tmux still opens.
         XCTAssertTrue(command.contains("command -v tmux"), command)
-        XCTAssertTrue(command.contains("new-session -A -s 'mm-s-0'"), command)
+        XCTAssertTrue(command.contains("new-session -A -s \"mm-s-0\""), command)
         XCTAssertTrue(command.contains("|| exec"), command)
         XCTAssertTrue(command.contains("SHELL"), command)
-        // Both branches exec, so no probing shell is left as a parent process.
-        XCTAssertEqual(command.components(separatedBy: "exec ").count - 1, 2)
+        // Three execs: the outer login shell, then tmux OR the fallback shell —
+        // whichever branch runs replaces the process, so nothing lingers.
+        XCTAssertEqual(command.components(separatedBy: "exec ").count - 1, 3)
+    }
+
+    /// The probe runs under a login shell (`-lc`), not the bare non-login shell
+    /// sshd's exec channel provides. Without this, a Homebrew/`/usr/local` tmux
+    /// is off PATH, the probe reports it missing, and the session silently
+    /// falls back to a plain shell — tmux looks broken though it is installed.
+    func testProbeRunsUnderALoginShell() {
+        let cmd = try! XCTUnwrap(TmuxLaunch.launchCommand(enabled: true,
+                                                          sessionID: "s", paneIndex: 0))
+        // The command's first act is to re-exec a login shell, and the tmux
+        // probe lives inside that login shell's `-lc` body.
+        XCTAssertTrue(cmd.hasPrefix("exec \"${SHELL:-/bin/sh}\" -lc '"), cmd)
+        let probeIndex = try! XCTUnwrap(cmd.range(of: "command -v tmux"))
+        let lcIndex = try! XCTUnwrap(cmd.range(of: "-lc '"))
+        XCTAssertLessThan(lcIndex.lowerBound, probeIndex.lowerBound,
+                          "the login shell must be entered before the probe: \(cmd)")
     }
 
     /// The name inside the command matches the name the reattach will look
@@ -67,7 +84,7 @@ final class TmuxLaunchTests: XCTestCase {
         let cmd = try! XCTUnwrap(TmuxLaunch.launchCommand(enabled: true,
                                                           sessionID: "host-9",
                                                           paneIndex: 1))
-        XCTAssertTrue(cmd.contains("'\(name)'"), cmd)
+        XCTAssertTrue(cmd.contains("\"\(name)\""), cmd)
     }
 
     // MARK: - it stays off the wire when unused
@@ -77,6 +94,35 @@ final class TmuxLaunchTests: XCTestCase {
         XCTAssertNil(config.useTmux)
         XCTAssertNil(TmuxLaunch.launchCommand(enabled: config.useTmux == true,
                                               sessionID: config.id, paneIndex: 0))
+    }
+
+    /// The exact wiring `TerminalTab.connectSSH` uses: a config with tmux on and
+    /// a chosen name must produce an attach command for THAT name. This locks
+    /// the SSH path end to end — a config field that stops reaching the launch
+    /// command would fail here rather than only on a live connection.
+    func testConfigWithTmuxAndNameBuildsAttachCommand() {
+        var config = SessionConfig(name: "s", host: "h", port: 22, username: "u")
+        config.useTmux = true
+        config.tmuxSession = "work"
+        let cmd = try! XCTUnwrap(TmuxLaunch.launchCommand(
+            enabled: config.useTmux == true,
+            sessionID: config.id, paneIndex: 0,
+            explicitName: config.tmuxSession))
+        XCTAssertTrue(cmd.contains("new-session -A -s \"work\""), cmd)
+    }
+
+    /// tmux on but no chosen name falls to the stable generated name, so a
+    /// reconnect still finds the same session.
+    func testConfigWithTmuxAndNoNameUsesGeneratedName() {
+        var config = SessionConfig(name: "s", host: "h", port: 22, username: "u")
+        config.useTmux = true
+        config.tmuxSession = nil
+        let cmd = try! XCTUnwrap(TmuxLaunch.launchCommand(
+            enabled: config.useTmux == true,
+            sessionID: config.id, paneIndex: 0,
+            explicitName: config.tmuxSession))
+        let expected = TmuxLaunch.sessionName(sessionID: config.id, paneIndex: 0)
+        XCTAssertTrue(cmd.contains("new-session -A -s \"\(expected)\""), cmd)
     }
 }
 
@@ -94,7 +140,7 @@ extension TmuxLaunchTests {
     func testExplicitNameAppearsInTheCommand() {
         let cmd = try! XCTUnwrap(TmuxLaunch.launchCommand(
             enabled: true, sessionID: "s", paneIndex: 0, explicitName: "build"))
-        XCTAssertTrue(cmd.contains("new-session -A -s 'build'"), cmd)
+        XCTAssertTrue(cmd.contains("new-session -A -s \"build\""), cmd)
     }
 
     /// Unsafe characters in a typed name are folded the same as anywhere else,
