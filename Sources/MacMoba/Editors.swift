@@ -45,6 +45,7 @@ struct SessionEditView: View {
     @State private var expectText = ""
     @State private var x11Forwarding = false
     @State private var useTmux = false
+    @State private var tmuxSession = ""
     @State private var fallbackHostsText = ""
     @State private var serialBaud = 9600
     @State private var serialFormat = "8N1"
@@ -136,7 +137,7 @@ struct SessionEditView: View {
          String(useAllDisplays), ftpSecurity.rawValue, webURL, credentialRef,
          colorTag.rawValue, tagsText, notes, onConnectCommands, expectText,
          hostOverridesText,
-         String(x11Forwarding), String(useTmux), fallbackHostsText, String(serialBaud),
+         String(x11Forwarding), String(useTmux), tmuxSession, fallbackHostsText, String(serialBaud),
          serialFormat]
             .joined(separator: "\u{1F}")
     }
@@ -536,6 +537,16 @@ struct SessionEditView: View {
         if kind == .ssh {
             Section("tmux") {
                 Toggle("Run inside tmux", isOn: $useTmux)
+                if useTmux {
+                    TextField("Session name (optional)", text: $tmuxSession,
+                              prompt: Text("automatic"))
+                    Text("Which tmux session to attach to. Leave blank and "
+                         + "MacMoba uses a stable name of its own. Set it to "
+                         + "join a session you made by hand on the server "
+                         + "(`tmux new -s work`) — type `work` here.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Text("Launches the shell with `tmux new-session -A -s …`, so a "
                      + "dropped connection reattaches instead of starting over. "
                      + "Falls back to a normal shell if the remote has no tmux. "
@@ -694,6 +705,7 @@ struct SessionEditView: View {
         expectText = ExpectStep.formatLines(s.expectSequence ?? [])
         x11Forwarding = s.x11Forwarding ?? false
         useTmux = s.useTmux ?? false
+        tmuxSession = s.tmuxSession ?? ""
         fallbackHostsText = (s.fallbackHosts ?? []).joined(separator: ", ")
         serialBaud = s.serialBaud ?? 9600
         serialFormat = s.serialFormat ?? "8N1"
@@ -808,6 +820,9 @@ struct SessionEditView: View {
         let sshLike = kind == .ssh || kind == .mosh
         config.x11Forwarding = (sshLike && x11Forwarding) ? true : nil
         config.useTmux = (kind == .ssh && useTmux) ? true : nil
+        let trimmedTmux = tmuxSession.trimmingCharacters(in: .whitespaces)
+        config.tmuxSession = (kind == .ssh && useTmux && !trimmedTmux.isEmpty)
+            ? trimmedTmux : nil
         // Comma-separated, trimmed, empties dropped — reuse the tag splitter.
         // Kept in the typed form rather than the parsed one, so a line the
         // parser skips is still in front of whoever typed it next time.

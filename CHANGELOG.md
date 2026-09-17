@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5.1
+
+**Choose which tmux session to attach to.** "Run inside tmux" now has a
+session-name field. Leave it blank and MacMoba picks a stable name of its own,
+as before; type a name to join a session you started by hand on the server
+(`tmux new -s work` → type `work`). Two MacMoba sessions pointed at the same
+name share one tmux session.
+
 ## 3.5
 
 **tmux, as a per-session option.** Turn on "Run inside tmux" in an SSH

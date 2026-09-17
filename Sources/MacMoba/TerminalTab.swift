@@ -261,7 +261,8 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
         // here. A distinct per-split name is a later refinement.
         let launch = TmuxLaunch.launchCommand(
             enabled: config.useTmux == true,
-            sessionID: config.id, paneIndex: 0)
+            sessionID: config.id, paneIndex: 0,
+            explicitName: config.tmuxSession)
         return try await SSHConnection.connect(
             config: route.config,
             cols: cols,

@@ -29,13 +29,34 @@ public enum TmuxLaunch {
     /// `[A-Za-z0-9_-]` folds to `_`, and the pane index on the end keeps two
     /// panes of the same saved session apart.
     public static func sessionName(sessionID: String, paneIndex: Int) -> String {
-        let slug = sessionID.map { ch -> Character in
-            ch.isLetter || ch.isNumber || ch == "-" || ch == "_" ? ch : "_"
-        }
         // Cap the slug so the whole name stays well under any sane limit and
         // stays readable in `tmux ls`.
-        let capped = String(slug.prefix(48))
+        let capped = String(fold(sessionID).prefix(48))
         return "mm-\(capped)-\(paneIndex)"
+    }
+
+    /// Fold to the characters a tmux session name may safely hold. tmux reads
+    /// `.` and `:` as window/pane addresses and matches a name as a prefix, so
+    /// anything outside `[A-Za-z0-9_-]` becomes `_`.
+    static func fold(_ raw: String) -> String {
+        String(raw.map { ch in
+            ch.isLetter || ch.isNumber || ch == "-" || ch == "_" ? ch : "_"
+        })
+    }
+
+    /// The name a launch will attach to: the user's chosen name if they gave
+    /// one, otherwise the stable generated one. A chosen name is folded but
+    /// NOT prefixed with `mm-` — it is the user's, meant to match a session
+    /// they may have made by hand (`tmux new -s work`), so `work` stays
+    /// `work`. Blank or all-unsafe input falls back to the generated name.
+    public static func resolvedName(explicit: String?, sessionID: String,
+                                    paneIndex: Int) -> String {
+        if let explicit {
+            let folded = fold(explicit.trimmingCharacters(in: .whitespaces))
+                .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+            if !folded.isEmpty { return String(folded.prefix(64)) }
+        }
+        return sessionName(sessionID: sessionID, paneIndex: paneIndex)
     }
 
     /// The command to run instead of a bare shell, or nil to keep the plain
@@ -48,9 +69,11 @@ public enum TmuxLaunch {
     /// this feature existed. `$SHELL` is preferred, `sh -l` the floor.
     public static func launchCommand(enabled: Bool,
                                      sessionID: String,
-                                     paneIndex: Int) -> String? {
+                                     paneIndex: Int,
+                                     explicitName: String? = nil) -> String? {
         guard enabled else { return nil }
-        let name = sessionName(sessionID: sessionID, paneIndex: paneIndex)
+        let name = resolvedName(explicit: explicitName, sessionID: sessionID,
+                                paneIndex: paneIndex)
         // Single-quoted for the remote sh -c; the name has no quotes to escape
         // (sessionName guarantees it), but keep the form defensive anyway.
         return "command -v tmux >/dev/null 2>&1 && "

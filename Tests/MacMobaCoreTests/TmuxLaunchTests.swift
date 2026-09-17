@@ -79,3 +79,45 @@ final class TmuxLaunchTests: XCTestCase {
                                               sessionID: config.id, paneIndex: 0))
     }
 }
+
+// MARK: - an explicit session name
+
+extension TmuxLaunchTests {
+    /// A name the user typed is used verbatim (folded), NOT prefixed with
+    /// `mm-`: it is meant to match a session they made by hand on the server.
+    func testExplicitNameIsUsedAsIs() {
+        let name = TmuxLaunch.resolvedName(explicit: "work",
+                                           sessionID: "s", paneIndex: 0)
+        XCTAssertEqual(name, "work")
+    }
+
+    func testExplicitNameAppearsInTheCommand() {
+        let cmd = try! XCTUnwrap(TmuxLaunch.launchCommand(
+            enabled: true, sessionID: "s", paneIndex: 0, explicitName: "build"))
+        XCTAssertTrue(cmd.contains("new-session -A -s 'build'"), cmd)
+    }
+
+    /// Unsafe characters in a typed name are folded the same as anywhere else,
+    /// so the name that reaches tmux is always attachable.
+    func testExplicitNameIsFolded() {
+        XCTAssertEqual(
+            TmuxLaunch.resolvedName(explicit: "my.work:1", sessionID: "s", paneIndex: 0),
+            "my_work_1")
+    }
+
+    /// Blank or all-punctuation input is not a name; fall back to the stable
+    /// generated one rather than attaching to a session called "" or "_".
+    func testBlankExplicitNameFallsBackToGenerated() {
+        for junk in ["", "   ", "..."] {
+            XCTAssertEqual(
+                TmuxLaunch.resolvedName(explicit: junk, sessionID: "s", paneIndex: 3),
+                "mm-s-3")
+        }
+    }
+
+    func testNilExplicitNameFallsBackToGenerated() {
+        XCTAssertEqual(
+            TmuxLaunch.resolvedName(explicit: nil, sessionID: "s", paneIndex: 0),
+            "mm-s-0")
+    }
+}

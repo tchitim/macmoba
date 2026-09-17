@@ -233,6 +233,11 @@ public struct SessionConfig: Codable, Equatable, Identifiable, Sendable {
     /// falls back to a plain shell if the remote has no tmux.
     public var useTmux: Bool?
 
+    /// The tmux session to attach to, if a specific one is wanted. Empty/nil
+    /// means MacMoba picks a stable per-session name of its own. Set it to
+    /// share one tmux session with a name you made by hand on the server.
+    public var tmuxSession: String?
+
     /// Tunnel the Mac's X server to this session so remote GUI apps display
     /// locally (via a remote forward; needs XQuartz). Optional, back-compat.
     public var x11Forwarding: Bool?
