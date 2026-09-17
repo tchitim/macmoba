@@ -12,6 +12,7 @@
 //   macmoba read-screen --tab <index|title> [--lines N]
 //   macmoba set-status --tab <index|title> <text>
 //   macmoba notify --title <text> [--body <text>]
+//   macmoba mcp                                    (MCP server over stdio)
 //
 // Deliberately dependency-free: a blocking Unix-socket client is 60 lines and
 // keeps this helper binary tiny.
@@ -48,6 +49,7 @@ guard !args.isEmpty else {
       send --tab <t> <text> | read-screen --tab <t> [--lines N]
       set-status --tab <t> <text> | notify --title <text> [--body <text>]
       agent-event --source <s> --event <e> [--body <text>] | hooks install claude
+      mcp   (Model Context Protocol server over stdio — claude mcp add macmoba -- macmoba mcp)
     """)
 }
 
@@ -70,6 +72,11 @@ let cmd = positional.removeFirst()
 
 // `hooks` edits local agent config; it neither needs nor wants a running app.
 if cmd == "hooks" { Hooks.run(positional) }
+
+// `mcp` serves tools over stdio until the client hangs up. It reaches the
+// app per tool call, so starting it does not require the app to be running —
+// tools fail politely instead, which is what an agent can act on.
+if cmd == "mcp" { MCPServer.run(socketPath: socketPath, tokenPath: tokenPath) }
 
 var requestArgs = flags
 switch cmd {
@@ -108,63 +115,17 @@ if cmd == "send", let text = requestArgs["text"] {
         .replacingOccurrences(of: "\\t", with: "\t")
 }
 
-guard let token = try? String(contentsOfFile: tokenPath, encoding: .utf8)
-        .trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty else {
-    fail("no control token at \(tokenPath) — is MacMoba running?")
-}
-
 // MARK: - one JSON line over the Unix socket
 
-struct Request: Encodable { let token: String; let cmd: String; let args: [String: String] }
-struct Response: Decodable { let ok: Bool; let data: String?; let error: String? }
-
-let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-guard fd >= 0 else { fail("socket: \(String(cString: strerror(errno)))") }
-defer { close(fd) }
-
-var addr = sockaddr_un()
-addr.sun_family = sa_family_t(AF_UNIX)
-let ok = socketPath.withCString { pathBytes -> Bool in
-    let maxLen = MemoryLayout.size(ofValue: addr.sun_path) - 1
-    guard strlen(pathBytes) <= maxLen else { return false }
-    withUnsafeMutableBytes(of: &addr.sun_path) { raw in
-        _ = strcpy(raw.baseAddress!.assumingMemoryBound(to: CChar.self), pathBytes)
+do {
+    let response = try ControlClient.call(cmd: cmd, args: requestArgs,
+                                          socketPath: socketPath, tokenPath: tokenPath)
+    if response.ok {
+        if let data = response.data { print(data) }
+        exit(0)
+    } else {
+        fail(response.error ?? "unknown error")
     }
-    return true
-}
-guard ok else { fail("socket path too long: \(socketPath)") }
-
-let connected = withUnsafePointer(to: &addr) {
-    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-        Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
-    }
-}
-guard connected == 0 else {
-    fail("cannot reach MacMoba at \(socketPath) — is the app running?")
-}
-
-let payload = try! JSONEncoder().encode(Request(token: token, cmd: cmd, args: requestArgs))
-var line = payload
-line.append(0x0A)
-_ = line.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
-
-// Read until the newline that ends the response.
-var responseData = Data()
-var buf = [UInt8](repeating: 0, count: 4096)
-while !responseData.contains(0x0A) {
-    let n = read(fd, &buf, buf.count)
-    if n <= 0 { break }
-    responseData.append(contentsOf: buf[0..<n])
-}
-guard let newline = responseData.firstIndex(of: 0x0A) else { fail("no response") }
-let responseLine = responseData[..<newline]
-
-guard let response = try? JSONDecoder().decode(Response.self, from: responseLine) else {
-    fail("unparseable response: \(String(decoding: responseLine, as: UTF8.self))")
-}
-if response.ok {
-    if let data = response.data { print(data) }
-    exit(0)
-} else {
-    fail(response.error ?? "unknown error")
+} catch let error as ControlClientError {
+    fail(error.message)
 }

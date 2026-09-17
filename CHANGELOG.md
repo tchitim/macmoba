@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.4
+
+**MacMoba is an MCP server now.** `claude mcp add macmoba -- macmoba mcp` and
+Claude Code can list your tabs, read a terminal's screen, open saved sessions
+and web tabs, and raise notifications — as tools, not shell-outs. It is the
+same control socket the CLI has always spoken, with an MCP front on it.
+
+Typing is different from reading: `send_text` acts as you at a shell, so it
+stays disabled until you enable **Allow agents to type into terminals** in
+Settings. The gate lives in the app at the socket — every client crosses it
+there, so it cannot be skipped by talking to the socket directly.
+
+**Performance now has budgets, not adjectives.** `./measure.sh` times a
+release build from launch to control-ready, round-trips the control channel,
+and reads idle memory; the numbers and their budgets live in STATUS.md, so a
+regression is an event rather than a drift.
+
 ## 3.3
 
 **A file panel shown again now re-lists, instead of showing what it saw last

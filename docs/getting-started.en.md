@@ -242,6 +242,22 @@ macmoba notify --title "deploy finished"   # raise a notification
 
 The control channel is `~/Library/Application Support/MacMoba/control.sock` (0600), with a token reissued on every launch, reachable only by this user on this machine.
 
+### MCP server
+
+The same control channel, spoken as MCP — so Claude Code (or Claude Desktop)
+can use MacMoba as tools instead of shelling out:
+
+```bash
+claude mcp add macmoba -- macmoba mcp
+```
+
+Six tools: `list_tabs` and `read_screen` (read-only, always allowed),
+`open_session`, `open_url`, `notify`, and `send_text`. Typing into your
+terminal acts as you at a shell, so `send_text` stays disabled until you turn
+on **Allow agents to type into terminals** in Settings — and the gate sits in
+the app at the socket, where every client has to cross it, not in any one
+client.
+
 ### AI agent integration
 
 If you run Claude Code in a MacMoba local shell tab:

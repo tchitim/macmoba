@@ -102,6 +102,17 @@ extension AppState {
             return .success(json: jsonString(["opened": url]))
 
         case "send":
+            // The MCP server stamps agent-driven sends. Typing into the
+            // user's terminal is the one tool that acts AS the user at a
+            // shell, so it is opt-in — and the gate lives here, at the
+            // socket, where every client has to cross it, rather than in
+            // any one client.
+            if request.args["agent"] == "1",
+               !UserDefaults.standard.bool(forKey: "allowAgentTyping") {
+                return .failure("Agent typing is disabled. Enable "
+                    + "\u{201C}Allow agents to type into terminals\u{201D} "
+                    + "in MacMoba's Settings to permit it.")
+            }
             guard let text = request.args["text"], !text.isEmpty else {
                 return .failure("send needs text")
             }

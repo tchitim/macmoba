@@ -4,6 +4,7 @@ import AppKit
 import SwiftUI
 
 struct SettingsView: View {
+    @AppStorage("allowAgentTyping") private var allowAgentTyping = false
     @EnvironmentObject var app: AppState
     @ObservedObject private var clipboard = ClipboardPrefs.shared
     @State private var logPath = SessionLogger.directory.path
@@ -33,6 +34,16 @@ struct SettingsView: View {
                 Text("On launch the tabs you had open are reopened and connect "
                      + "as usual. After sleep, terminal sessions that dropped are "
                      + "redialled; ones that survived are left alone.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Agents") {
+                Toggle("Allow agents to type into terminals",
+                       isOn: $allowAgentTyping)
+                Text("Lets an MCP client (\u{201C}claude mcp add macmoba -- "
+                     + "macmoba mcp\u{201D}) use the send_text tool. Reading "
+                     + "tabs and screens is always allowed; typing acts as "
+                     + "you at a shell, so it is off until you turn it on.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

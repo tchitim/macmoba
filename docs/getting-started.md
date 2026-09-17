@@ -217,6 +217,21 @@ macmoba notify --title "部署完成"           # 跳出通知
 
 控制通道是 `~/Library/Application Support/MacMoba/control.sock`（0600），每次啟動換發一組 token，只有本機這個使用者能存取。
 
+### MCP server
+
+同一條控制通道,講 MCP——讓 Claude Code(或 Claude Desktop)把 MacMoba
+當工具用,不必再 shell 出去:
+
+```bash
+claude mcp add macmoba -- macmoba mcp
+```
+
+六個工具:`list_tabs`、`read_screen`(唯讀,一律可用)、`open_session`、
+`open_url`、`notify`、`send_text`。打字進終端機等於**以你的身分**在 shell
+上操作,所以 `send_text` 預設停用,要在設定裡打開 **Allow agents to type
+into terminals**——而且閘門在 app 這側的 socket 上,每個 client 都得過它,
+不是靠某一個 client 自律。
+
 ### AI agent 整合
 
 若你在 MacMoba 的本機終端分頁裡跑 Claude Code：
