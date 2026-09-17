@@ -11,6 +11,13 @@ was installed, and a chosen session name never attached. The probe now runs
 through a login shell, so your profile has set PATH before "is tmux installed?"
 is asked.
 
+The session name matches **exactly**. To join a session you started by hand,
+the name in the field must equal the session's name in `tmux ls` — so a session
+made with `tmux new -s work` (named `work`) is joined by typing `work`, but one
+made with `tmux new -t work` (grouped, which tmux names `work-2`) is not: it
+needs `work-2`, or rename it with `tmux rename-session`. A name that matches
+nothing opens a new, separate session rather than attaching.
+
 ## 3.5.1
 
 **Choose which tmux session to attach to.** "Run inside tmux" now has a
