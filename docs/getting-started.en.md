@@ -358,7 +358,9 @@ The tabs you had open are remembered and reconnected on the next launch (turn it
 
 When a connection ends, the pane sits at "Connection closed": **Return reconnects**, **Escape closes it** (just that pane, in a split).
 
-**The state of the remote processes cannot be restored** — reconnecting is a new SSH connection. To keep work alive over there, use `tmux`/`screen`, or connect with Mosh.
+**The state of the remote processes cannot be restored** — reconnecting is a new SSH connection. To keep work alive over there, turn on **Run inside tmux** in the SSH session's editor (the shell launches with `tmux new-session -A`, and a reconnect reattaches where you left off), or connect with Mosh. Mosh survives losing the network; tmux survives losing the app.
+
+**Follow a remote log** without opening a shell yourself: right-click a file in the SFTP browser and choose **Follow (tail -f)** — a terminal opens on the same host, already tailing it.
 
 ---
 

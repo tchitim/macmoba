@@ -253,12 +253,22 @@ final class TerminalTab: NSObject, ObservableObject, Identifiable {
 
     private func connectSSH(cols: Int, rows: Int) async throws -> any TerminalTransport {
         let route = try await resolvedRoute()
+        // A tmux launch keys on the SAVED session id, not this pane's runtime
+        // id, so a reattach survives even an app relaunch — the strongest form
+        // of "tmux survives the client". Pane index 0: two splits of one saved
+        // session both attach the same tmux session and mirror, which is
+        // tmux's own behaviour for `new-session -A`, not a bug to design around
+        // here. A distinct per-split name is a later refinement.
+        let launch = TmuxLaunch.launchCommand(
+            enabled: config.useTmux == true,
+            sessionID: config.id, paneIndex: 0)
         return try await SSHConnection.connect(
             config: route.config,
             cols: cols,
             rows: rows,
             hostKeys: app?.hostKeyVerification,
             jumps: route.jumps,
+            launchCommand: launch,
             onData: { [weak self] data in self?.receive(data) },
             onExit: { [weak self] reason in
                 DispatchQueue.main.async { self?.handleExit(reason) }

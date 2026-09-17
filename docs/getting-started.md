@@ -332,7 +332,9 @@ MacMoba 使用 [Sparkle](https://sparkle-project.org/)：預設每天檢查一�
 
 連線斷掉時，那個分頁會停在「Connection closed」：**Return 重新連線**、**Esc 關掉它**（分割狀態下只關那一格）。
 
-**目前無法還原遠端行程的執行狀態**——重新連線是一條新的 SSH 連線。要讓工作留在遠端，請搭配 `tmux`／`screen`，或改用 Mosh 連線。
+**目前無法還原遠端行程的執行狀態**——重新連線是一條新的 SSH 連線。要讓工作留在遠端，在 SSH 連線編輯器打開 **Run inside tmux**（shell 以 `tmux new-session -A` 啟動，重連會接回原本畫面），或改用 Mosh。Mosh 救網路，tmux 救 app。
+
+**追一個遠端 log** 不必自己開 shell:在 SFTP 瀏覽器右鍵一個檔案,選 **Follow (tail -f)**——會開一個已經在同一台主機上 tail 它的終端機。
 
 ---
 

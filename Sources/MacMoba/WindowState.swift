@@ -168,6 +168,26 @@ final class WindowState: ObservableObject {
         app.saveOpenWorkspace()
     }
 
+    /// Open a terminal on `base`'s host that follows a file — the SFTP
+    /// browser's "Follow". A transient config: the tail is an on-connect
+    /// command, and the config is never saved, so nothing about the stored
+    /// session changes. On-connect commands re-run on reconnect, which is
+    /// exactly right here — a dropped follow should resume following.
+    func openFollow(base: SessionConfig, path: String) {
+        var transient = base
+        transient.id = UUID().uuidString      // its own tab, not the browser's
+        transient.name = "Follow: \((path as NSString).lastPathComponent)"
+        transient.kind = SessionKind.ssh.rawValue
+        transient.onConnectCommands = FollowCommand.command(path: path)
+        // tmux would keep the tail alive past this tab, defeating "close the
+        // tab, stop following"; force it off on the transient copy.
+        transient.useTmux = nil
+        let tab = SessionTab(config: app.resolved(transient), app: app)
+        tabs.append(tab)
+        selectedTabID = tab.id
+        app.saveOpenWorkspace()
+    }
+
     /// Reopen the sessions that were open last time. Called once, on the primary
     /// window, after the vault unlocks.
     func restoreWorkspace() {

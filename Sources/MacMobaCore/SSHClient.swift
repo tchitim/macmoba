@@ -216,6 +216,7 @@ public final class SSHConnection {
         rows: Int = 24,
         hostKeys: HostKeyVerification? = nil,
         jumps: [SessionConfig] = [],
+        launchCommand: String? = nil,
         onData: @escaping (Data) -> Void,
         onExit: @escaping (String) -> Void
     ) async throws -> SSHConnection {
@@ -226,7 +227,8 @@ public final class SSHConnection {
             let session = try await openSessionChannel(
                 parent: parent, handler: ioHandler,
                 timeoutSeconds: hostKeys == nil ? 8 : 180)
-            try await requestShell(session: session, cols: cols, rows: rows)
+            try await requestShell(session: session, cols: cols, rows: rows,
+                                   launchCommand: launchCommand)
             return SSHConnection(parent: parent, session: session)
         } catch {
             parent.close(promise: nil)
@@ -467,7 +469,8 @@ public final class SSHConnection {
                                           on: session.eventLoop)
     }
 
-    private static func requestShell(session: Channel, cols: Int, rows: Int) async throws {
+    private static func requestShell(session: Channel, cols: Int, rows: Int,
+                                     launchCommand: String? = nil) async throws {
         let pty = SSHChannelRequestEvent.PseudoTerminalRequest(
             wantReply: true,
             term: "xterm-256color",
@@ -478,8 +481,19 @@ public final class SSHConnection {
             terminalModes: SSHTerminalModes([:])
         )
         try await session.triggerUserOutboundEvent(pty).get()
-        let shell = SSHChannelRequestEvent.ShellRequest(wantReply: true)
-        try await session.triggerUserOutboundEvent(shell).get()
+        // A launch command runs through exec instead of a bare shell — the
+        // remote's sh evaluates it, so the tmux probe-and-fallback is one
+        // atomic request rather than characters typed into a live shell that
+        // would race the shell's own startup and echo. Nil keeps the plain
+        // interactive shell, which is every non-tmux session.
+        if let launchCommand {
+            let exec = SSHChannelRequestEvent.ExecRequest(
+                command: launchCommand, wantReply: true)
+            try await session.triggerUserOutboundEvent(exec).get()
+        } else {
+            let shell = SSHChannelRequestEvent.ShellRequest(wantReply: true)
+            try await session.triggerUserOutboundEvent(shell).get()
+        }
     }
 
     static func loadPrivateKey(_ config: SessionConfig) throws -> NIOSSHPrivateKey? {

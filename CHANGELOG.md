@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.5
+
+**tmux, as a per-session option.** Turn on "Run inside tmux" in an SSH
+session's editor and the shell launches with `tmux new-session -A -s …`, so a
+dropped connection reattaches to the same session instead of starting over —
+your editor still open, your build still scrolling. If the remote has no tmux
+it falls back to a normal shell, so nothing breaks by turning it on. Mosh
+survives losing the network; tmux survives losing the app.
+
+**Follow a remote log from the file browser.** Right-click a file in an SFTP
+browser and choose "Follow (tail -f)": a new terminal opens on the same host,
+already tailing it. The thing an infrastructure user does by hand every day,
+as one menu item.
+
 ## 3.4
 
 **MacMoba is an MCP server now.** `claude mcp add macmoba -- macmoba mcp` and

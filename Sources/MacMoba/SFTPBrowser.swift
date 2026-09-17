@@ -782,7 +782,17 @@ struct SFTPBrowserView: View {
                     renameText = item.name
                     renameTarget = item
                 },
-                onDelete: { deleteTarget = $0 }
+                onDelete: { deleteTarget = $0 },
+                // Follow needs a shell, so only an SSH-backed browser offers
+                // it — an FTP session has none. Opens on the first window;
+                // with one window (the common case) that is this one.
+                onFollow: model.config.sessionKind.authenticatesOverSSH
+                    ? { item in
+                        app.windows.first?.openFollow(
+                            base: model.config,
+                            path: model.remotePathForDrag(item))
+                    }
+                    : nil
             )
         }
     }

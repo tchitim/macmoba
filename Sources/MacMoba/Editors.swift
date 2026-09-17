@@ -44,6 +44,7 @@ struct SessionEditView: View {
     @State private var onConnectCommands = ""
     @State private var expectText = ""
     @State private var x11Forwarding = false
+    @State private var useTmux = false
     @State private var fallbackHostsText = ""
     @State private var serialBaud = 9600
     @State private var serialFormat = "8N1"
@@ -114,6 +115,7 @@ struct SessionEditView: View {
             return !onConnectCommands.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || !expectText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || x11Forwarding
+                || useTmux
         case .display:
             if kind == .serial { return serialBaud != 9600 || serialFormat != "8N1" }
             return displayMode != .fitWindow || useAllDisplays || !sharedFolders.isEmpty
@@ -134,7 +136,7 @@ struct SessionEditView: View {
          String(useAllDisplays), ftpSecurity.rawValue, webURL, credentialRef,
          colorTag.rawValue, tagsText, notes, onConnectCommands, expectText,
          hostOverridesText,
-         String(x11Forwarding), fallbackHostsText, String(serialBaud),
+         String(x11Forwarding), String(useTmux), fallbackHostsText, String(serialBaud),
          serialFormat]
             .joined(separator: "\u{1F}")
     }
@@ -531,6 +533,18 @@ struct SessionEditView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        if kind == .ssh {
+            Section("tmux") {
+                Toggle("Run inside tmux", isOn: $useTmux)
+                Text("Launches the shell with `tmux new-session -A -s …`, so a "
+                     + "dropped connection reattaches instead of starting over. "
+                     + "Falls back to a normal shell if the remote has no tmux. "
+                     + "Mosh survives losing the network; tmux survives losing "
+                     + "the app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
         if kind == .ssh || kind == .mosh {
             Section("X11") {
                 Toggle("Forward X11 (remote GUI apps)", isOn: $x11Forwarding)
@@ -679,6 +693,7 @@ struct SessionEditView: View {
         onConnectCommands = s.onConnectCommands ?? ""
         expectText = ExpectStep.formatLines(s.expectSequence ?? [])
         x11Forwarding = s.x11Forwarding ?? false
+        useTmux = s.useTmux ?? false
         fallbackHostsText = (s.fallbackHosts ?? []).joined(separator: ", ")
         serialBaud = s.serialBaud ?? 9600
         serialFormat = s.serialFormat ?? "8N1"
@@ -792,6 +807,7 @@ struct SessionEditView: View {
         config.expectSequence = expectSteps.isEmpty ? nil : expectSteps
         let sshLike = kind == .ssh || kind == .mosh
         config.x11Forwarding = (sshLike && x11Forwarding) ? true : nil
+        config.useTmux = (kind == .ssh && useTmux) ? true : nil
         // Comma-separated, trimmed, empties dropped — reuse the tag splitter.
         // Kept in the typed form rather than the parsed one, so a line the
         // parser skips is still in front of whoever typed it next time.

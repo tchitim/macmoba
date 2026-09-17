@@ -228,6 +228,11 @@ public struct SessionConfig: Codable, Equatable, Identifiable, Sendable {
     /// Expect/send steps run after connect: wait for a prompt, then type. Runs
     /// after `onConnectCommands`. Optional, back-compat. See ExpectMachine.
     public var expectSequence: [ExpectStep]?
+    /// Run the shell inside `tmux new-session -A -s <name>`, so a dropped SSH
+    /// channel can reattach instead of starting over. Optional, back-compat;
+    /// falls back to a plain shell if the remote has no tmux.
+    public var useTmux: Bool?
+
     /// Tunnel the Mac's X server to this session so remote GUI apps display
     /// locally (via a remote forward; needs XQuartz). Optional, back-compat.
     public var x11Forwarding: Bool?

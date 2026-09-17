@@ -16,6 +16,9 @@ struct SFTPFileTable: NSViewRepresentable {
     var onEditWith: (SFTPItem) -> Void
     var onRename: (SFTPItem) -> Void
     var onDelete: (SFTPItem) -> Void
+    /// Nil where following makes no sense: FTP has no shell, and the
+    /// two-pane transfer panel's local side is not remote at all.
+    var onFollow: ((SFTPItem) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -240,6 +243,7 @@ struct SFTPFileTable: NSViewRepresentable {
                 case 4: parent.onRename(item)
                 case 5: parent.onDelete(item)
                 case 6: parent.model.stopEditing(parent.model.remotePathForDrag(item))
+                case 7: parent.onFollow?(item)
                 default: break
                 }
             }
@@ -275,6 +279,9 @@ extension SFTPFileTable.Coordinator: NSMenuDelegate {
         } else {
             add(menu, "Edit Locally", 1)
             add(menu, "Edit With…", 2)
+            if parent.onFollow != nil {
+                add(menu, "Follow (tail -f)", 7)
+            }
         }
         add(menu, "Download…", 3)
         add(menu, "Rename…", 4)

@@ -1,0 +1,60 @@
+// Launch a shell inside tmux, and name the session so it can be found again.
+//
+// KKTerm's ARCHITECTURE.md draws the line this borrows: tmux is transport
+// recovery, not a second Mosh. When enabled on a connection, the shell is
+// launched with `tmux new-session -A -s <name>`; if the SSH channel dies
+// unexpectedly, one bounded reattach to the same name gets the session back.
+// Mosh survives losing the network; tmux survives losing the client.
+//
+// Two hazards this file exists to handle:
+//
+//  1. tmux may not be installed on the far side. The launch must fall back to
+//     a plain login shell rather than killing the whole channel — a session
+//     that will not open at all is far worse than one without tmux. So the
+//     command probes first and `exec`s one or the other.
+//
+//  2. The session name must be STABLE across reconnects, or a reattach opens
+//     a second empty session beside the first. It is derived from durable
+//     identity (the saved session id and the pane's position), never from a
+//     UUID minted per launch.
+
+import Foundation
+
+public enum TmuxLaunch {
+    /// A tmux-safe session name: `mm-<slug>-<pane>`.
+    ///
+    /// tmux forbids `.` and `:` in a session name (they address windows and
+    /// panes) and treats a name as a prefix on lookup, so two names where one
+    /// is a prefix of the other would collide on reattach. Everything outside
+    /// `[A-Za-z0-9_-]` folds to `_`, and the pane index on the end keeps two
+    /// panes of the same saved session apart.
+    public static func sessionName(sessionID: String, paneIndex: Int) -> String {
+        let slug = sessionID.map { ch -> Character in
+            ch.isLetter || ch.isNumber || ch == "-" || ch == "_" ? ch : "_"
+        }
+        // Cap the slug so the whole name stays well under any sane limit and
+        // stays readable in `tmux ls`.
+        let capped = String(slug.prefix(48))
+        return "mm-\(capped)-\(paneIndex)"
+    }
+
+    /// The command to run instead of a bare shell, or nil to keep the plain
+    /// shell request. `enabled` false returns nil so the caller has one branch.
+    ///
+    /// `command -v tmux` is the portable "is it installed" test — a builtin in
+    /// every POSIX shell, unlike `which`. On success `exec tmux` replaces the
+    /// probing shell so no extra process lingers; on failure `exec` the login
+    /// shell, so a remote without tmux still gets exactly what it got before
+    /// this feature existed. `$SHELL` is preferred, `sh -l` the floor.
+    public static func launchCommand(enabled: Bool,
+                                     sessionID: String,
+                                     paneIndex: Int) -> String? {
+        guard enabled else { return nil }
+        let name = sessionName(sessionID: sessionID, paneIndex: paneIndex)
+        // Single-quoted for the remote sh -c; the name has no quotes to escape
+        // (sessionName guarantees it), but keep the form defensive anyway.
+        return "command -v tmux >/dev/null 2>&1 && "
+            + "exec tmux new-session -A -s '\(name)' || "
+            + "exec \"${SHELL:-/bin/sh}\" -l"
+    }
+}
