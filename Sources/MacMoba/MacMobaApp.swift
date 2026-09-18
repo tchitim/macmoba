@@ -237,6 +237,8 @@ struct MacMobaCommands: Commands {
                 .disabled(window == nil)
             Button("Trusted Hosts…") { window?.showTrustedHosts = true }
                 .disabled(window == nil)
+            Button("Batch Run…") { window?.showBatchRun = true }
+                .disabled(window == nil)
             Divider()
             Button("Library") { openWindow(id: "library") }
         }
@@ -391,6 +393,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $window.showNetworkTools) {
             NetworkToolsView()
+        }
+        .sheet(isPresented: $window.showBatchRun) {
+            BatchRunView().environmentObject(app)
         }
     }
 }

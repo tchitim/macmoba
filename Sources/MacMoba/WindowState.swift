@@ -36,6 +36,7 @@ final class WindowState: ObservableObject {
     @Published var showDiscover = false
     @Published var showKeyGen = false
     @Published var showNetworkTools = false
+    @Published var showBatchRun = false
     /// The trailing inspector panel (P1-5); remembered across launches.
     @Published var showInspector: Bool = UserDefaults.standard.bool(forKey: "showInspector") {
         didSet { UserDefaults.standard.set(showInspector, forKey: "showInspector") }

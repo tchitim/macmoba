@@ -85,17 +85,25 @@
    跑 `tail -n 100 -f <path>`。重用 on-connect command 和 dead-shell UX（Esc 關），
    幾乎沒有新機制。
 
-**v3.6 — 批次執行（縮小範圍版）**
+**v3.6 — 批次執行（縮小範圍版）** ✅ **做好了**
 
-6. **Tools ▸ Batch Run**：勾選 saved SSH sessions（資料夾可全選、記住上次選擇）、
+6. ~~**Tools ▸ Batch Run**~~ ✅：勾選 saved SSH sessions（資料夾可全選、記住上次選擇）、
    多行指令、並發上限 4（`runCommand` ＋ jump chain 都是現成的）。
-   逐主機一列：queued / running / ok / failed ＋ 即時輸出尾巴；可取消。
+   逐主機一列：queued / running / ok / failed ＋ 輸出（點開看）；可取消。
    跑完寫 `~/Documents/MacMoba Logs/batch/<時間戳>.md`——**append-only**，
-   面板可回看歷史。報告存主機**名稱**不存 id（KKTerm 的 soft-reference 原則：
-   主機刪了，紀錄還讀得到）。
-   - KKTerm 模型裡值得守住的一句：**Task 擁有「跑什麼」，永遠不擁有目標**。
-   - 不做：WinRM / PsExec（他們的 Windows 市場）。之後再說：具名目標集合
-     （現階段資料夾＋tag 就夠）、expect/send playbook（既有 expect 引擎可重用）。
+   一次一檔（資料夾就是歷史）。報告存主機**名稱**不存 id（KKTerm 的
+   soft-reference 原則:主機刪了,紀錄還讀得到）。
+   - 守住了那句:**Task 擁有「跑什麼」,永遠不擁有目標**（主機是每次傳進去的選擇,
+     不是一個擁有機器的存檔物件）。排程與報告在 `MacMobaCore.BatchRun`（8 個單元
+     測試:有界並發不超過上限、每台剛好跑一次、報告用名稱、檔名可排序）;逐台的
+     `runCommand`、活的狀態列、寫 log 在 `BatchRunView`。
+   - 兩點與計畫的差異（都是**縮小範圍**、非退步）:①輸出是**跑完整段呈現**、
+     點 disclosure 看,不是逐字元串流——`runCommand` 本來就一次回傳整段;真串流要
+     改寫 SSH exec 層,列為之後再說。②`ok` 代表**連上並跑完**,指令自身的 exit code
+     不另外判（輸出裡看）——要 exit status 得多接一個 SSH exit-status 訊息。
+   - 不做:WinRM / PsExec（他們的 Windows 市場）。之後再說:具名目標集合
+     （現階段資料夾＋tag 就夠）、expect/send playbook（既有 expect 引擎可重用）、
+     即時串流輸出、per-command exit code。
 
 ~~FTP / FTPS~~ ✅ **做好了**：session 種類多了 FTP，開起來是**一個純檔案瀏覽器分頁**
 （沒有終端機——FTP 本來就沒有 shell）。用的是跟 SFTP 同一個面板：上傳、下載、

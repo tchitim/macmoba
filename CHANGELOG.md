@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.6
+
+**Batch Run.** Tools ▸ Batch Run picks any number of saved SSH sessions —
+whole folders at once, and it remembers your last selection — takes a command,
+and runs it on all of them, up to four hosts in parallel. Each host shows a
+live status (queued, running, ok, failed) with its output a click away, and you
+can cancel a run in progress. Each host is reached over its own jump chain,
+credentials, and host-key checks, exactly as a normal connect would.
+
+Every run is written to `~/Documents/MacMoba Logs/batch/<timestamp>.md` —
+append-only, one file per run, so the folder is a history you can go back
+through. The report records each host by **name**, not id, so a report still
+reads correctly after the session it named has been deleted. A run owns the
+command and the selection, never the machines themselves.
+
 ## 3.5.2
 
 **tmux is found even when it is not on the default PATH.** Turning on "Run
