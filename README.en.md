@@ -34,6 +34,7 @@ Written in Swift and SwiftUI, no Electron. Passwords live in a local encrypted v
 - X11 forwarding (over a remote forward; needs XQuartz)
 
 **Tools**
+- **Batch Run**: one command across many saved SSH hosts — pick whole folders at once (the selection is remembered), four hosts in parallel, per-host queued/running/ok/failed with its output a click away, cancellable mid-run. Every run writes a report to `~/Documents/MacMoba Logs/batch/`, one file per run and never rewritten, recording hosts by **name** rather than id — so an old report still reads correctly after you delete the session it names
 - SSH key generator (ed25519 / ECDSA)
 - Trusted Hosts: review and revoke pinned SSH host keys, RDP and web certificates
 - Network tools: Wake-on-LAN, port scan, DNS lookup

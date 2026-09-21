@@ -34,6 +34,7 @@ macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP
 - X11 forwarding（走 remote forward，需 XQuartz）
 
 **工具**
+- **Batch Run**：勾選一批 saved SSH 主機（資料夾可全選、記住上次選擇），一次跑同一組指令，最多 4 台並行；逐台 queued／running／ok／failed 與輸出，跑到一半可取消。每次跑完寫一份報告到 `~/Documents/MacMoba Logs/batch/`，**一次一檔、只增不改**，主機記的是**名稱**不是 id——日後把該連線刪了，舊報告照樣讀得懂
 - SSH 金鑰產生器（ed25519 / ECDSA）
 - 網路工具：Wake-on-LAN、埠掃描、DNS 查詢
 - Bonjour 網路探索、連線健康監測、遠端資源監視
