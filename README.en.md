@@ -28,6 +28,7 @@ Written in Swift and SwiftUI, no Electron. Passwords live in a local encrypted v
 **Terminal**
 - **Mixed split panes**: a shell, a remote desktop and a web page side by side in one tab; merge them, break them apart into tabs, and **the arrangement is restored on next launch**
 - MultiExec broadcast input, macros, session logging, scrollback search
+- **tmux**: an SSH session can "Run inside tmux", so a dropped connection reattaches to the same session — the editor still open, the scrollback still there — instead of starting over. Leave the name blank for a stable generated one, or type a name to join a session you started by hand: it matches **exactly**, so use the name as `tmux ls` shows it (`tmux new -t work` actually creates `work-2`). A remote without tmux quietly falls back to a normal shell. Mosh survives losing the network; tmux survives losing the client
 - **10,000 lines** of scrollback by default (adjustable from 500 to 100,000); optional **GPU rendering**, which is noticeably smoother when dragging a selection across a large window
 - SFTP panel (Quick Look, chmod, hidden files, drag to upload)
 - ZMODEM transfers both ways (`rz`/`sz`), paste a screenshot to upload it

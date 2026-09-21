@@ -28,6 +28,7 @@ macOS 上的原生遠端連線工作站——SSH、Mosh、Telnet、Rlogin、SFTP
 **終端**
 - **異質分割窗格**：一格 SSH、一格遠端桌面、一格網頁都在同一個分頁裡；可合併、可解散成獨立分頁，**版面會被記住並在下次啟動還原**
 - MultiExec 廣播輸入、巨集、Session log、scrollback 搜尋
+- **tmux**：SSH 連線可開「Run inside tmux」，斷線重連自動接回同一個 session，編輯器開著的程式和捲動紀錄都還在。名稱留白就用一個穩定的自動名稱；填了名稱就接你自己在遠端建的那個——**要完全同名**才接得上（`tmux ls` 顯示什麼就填什麼，`tmux new -t work` 建出來的其實叫 `work-2`）。遠端沒裝 tmux 會安靜退回一般 shell。Mosh 救的是網路，tmux 救的是 client
 - Scrollback 預設保留 **10,000 行**（可調 500–100,000）；選用 **GPU 算繪**，在大視窗拖曳選取時明顯更順
 - SFTP 面板（Quick Look、chmod、隱藏檔、拖放上傳）
 - ZMODEM 雙向傳檔（`rz`/`sz`）、貼上截圖自動上傳到遠端
